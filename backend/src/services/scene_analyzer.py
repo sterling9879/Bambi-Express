@@ -80,6 +80,9 @@ class SceneAnalyzer:
         self.image_style = image_style
         self._model_name = model  # Salvar para uso em test_connection
 
+    # Máximo de duração por chunk em ms (60 segundos)
+    MAX_CHUNK_DURATION_MS = 60000
+
     async def analyze(
         self,
         transcription: TranscriptionResult,
@@ -88,6 +91,7 @@ class SceneAnalyzer:
     ) -> SceneAnalysis:
         """
         Analisa transcrição e gera cenas.
+        Para transcrições longas, processa em chunks para evitar truncamento.
 
         Args:
             transcription: TranscriptionResult da AssemblyAI
@@ -97,38 +101,95 @@ class SceneAnalyzer:
         Returns:
             SceneAnalysis com cenas, prompts e music cues
         """
-        # Preparar dados da transcrição
-        transcription_data = {
-            "segments": [
-                {
-                    "text": seg.text,
-                    "start_ms": seg.start_ms,
-                    "end_ms": seg.end_ms,
-                    "words": [
-                        {"text": w.text, "start_ms": w.start_ms, "end_ms": w.end_ms}
-                        for w in seg.words
-                    ]
-                }
-                for seg in transcription.segments
-            ],
-            "full_text": transcription.full_text,
-            "duration_ms": transcription.duration_ms
-        }
+        # Dividir transcrição em chunks menores
+        chunks = self._split_into_chunks(transcription)
 
-        prompt = self._build_prompt(
-            transcription_data,
-            min_scene_duration,
-            max_scene_duration,
-            self.image_style
+        logger.info(f"Transcription split into {len(chunks)} chunks for processing")
+
+        all_scenes = []
+        all_music_cues = []
+        style_guide = ""
+
+        for i, chunk in enumerate(chunks):
+            logger.info(f"Processing chunk {i+1}/{len(chunks)}")
+
+            chunk_data = {
+                "segments": [
+                    {
+                        "text": seg.text,
+                        "start_ms": seg.start_ms,
+                        "end_ms": seg.end_ms,
+                        "words": [
+                            {"text": w.text, "start_ms": w.start_ms, "end_ms": w.end_ms}
+                            for w in seg.words
+                        ]
+                    }
+                    for seg in chunk
+                ],
+                "chunk_index": i,
+                "total_chunks": len(chunks),
+            }
+
+            prompt = self._build_prompt(
+                chunk_data,
+                min_scene_duration,
+                max_scene_duration,
+                self.image_style
+            )
+
+            response = await self.model.generate_content_async(prompt)
+            chunk_result = self._parse_response(response.text)
+
+            # Usar style_guide do primeiro chunk
+            if i == 0 and chunk_result.style_guide:
+                style_guide = chunk_result.style_guide
+
+            all_scenes.extend(chunk_result.scenes)
+            all_music_cues.extend(chunk_result.music_cues)
+
+        # Re-indexar cenas
+        for idx, scene in enumerate(all_scenes):
+            scene.scene_index = idx
+
+        logger.info(f"Total scenes generated: {len(all_scenes)}")
+
+        return SceneAnalysis(
+            style_guide=style_guide,
+            scenes=all_scenes,
+            music_cues=all_music_cues
         )
 
-        logger.info("Sending transcription to Gemini for scene analysis")
+    def _split_into_chunks(self, transcription: TranscriptionResult) -> list:
+        """
+        Divide a transcrição em chunks de no máximo MAX_CHUNK_DURATION_MS.
+        Tenta dividir em pausas naturais (entre segmentos).
+        """
+        if not transcription.segments:
+            return []
 
-        response = await self.model.generate_content_async(prompt)
+        chunks = []
+        current_chunk = []
+        chunk_start_ms = transcription.segments[0].start_ms
 
-        logger.info("Parsing Gemini response")
+        for segment in transcription.segments:
+            current_chunk.append(segment)
+            chunk_duration = segment.end_ms - chunk_start_ms
 
-        return self._parse_response(response.text)
+            # Se o chunk atingiu o limite, finaliza e começa novo
+            if chunk_duration >= self.MAX_CHUNK_DURATION_MS:
+                chunks.append(current_chunk)
+                current_chunk = []
+                # O próximo chunk começa após este segmento
+                if segment != transcription.segments[-1]:
+                    next_idx = transcription.segments.index(segment) + 1
+                    if next_idx < len(transcription.segments):
+                        chunk_start_ms = transcription.segments[next_idx].start_ms
+
+        # Adicionar o último chunk se houver segmentos restantes
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        return chunks
 
     def _build_prompt(
         self,
@@ -146,10 +207,18 @@ ESTILO VISUAL OBRIGATÓRIO:
 Todos os prompts de imagem DEVEM incluir este estilo no final: "{image_style}"
 """
 
+        chunk_info = ""
+        if "chunk_index" in transcription_data:
+            chunk_info = f"""
+INFORMAÇÃO DO CHUNK:
+Este é o chunk {transcription_data['chunk_index'] + 1} de {transcription_data['total_chunks']}.
+Processe APENAS os segmentos fornecidos abaixo.
+"""
+
         return f"""Você é um diretor de arte criando um vídeo.
 
 Receba esta transcrição com timestamps e divida em cenas visuais.
-{style_instruction}
+{style_instruction}{chunk_info}
 REGRAS OBRIGATÓRIAS:
 1. Cada cena deve ter entre {min_duration} e {max_duration} segundos
 2. NUNCA corte no meio de uma frase ou ideia
@@ -163,7 +232,7 @@ REGRAS OBRIGATÓRIAS:
 10. Identifique pontos onde o mood muda significativamente para transição musical
 
 TRANSCRIÇÃO COM TIMESTAMPS:
-{json.dumps(transcription_data, ensure_ascii=False, indent=2)}
+{json.dumps(transcription_data["segments"], ensure_ascii=False, indent=2)}
 
 RETORNE APENAS JSON VÁLIDO (sem markdown, sem ```):
 {{
