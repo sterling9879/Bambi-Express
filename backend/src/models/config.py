@@ -72,6 +72,7 @@ class GeminiConfig(ApiConfigItem):
 class WaveSpeedConfig(ApiConfigItem):
     model: str = "flux-dev-ultra-fast"
     resolution: str = "1920x1080"
+    image_style: str = "cinematic, dramatic lighting, 8k, hyperrealistic, professional photography"
 
 
 class SunoConfig(ApiConfigItem):

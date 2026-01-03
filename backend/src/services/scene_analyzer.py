@@ -24,9 +24,10 @@ class SceneAnalyzer:
     - Identificação de transições musicais
     """
 
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash"):
+    def __init__(self, api_key: str, model: str = "gemini-2.0-flash", image_style: str = ""):
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel(model)
+        self.image_style = image_style
 
     async def analyze(
         self,
@@ -66,7 +67,8 @@ class SceneAnalyzer:
         prompt = self._build_prompt(
             transcription_data,
             min_scene_duration,
-            max_scene_duration
+            max_scene_duration,
+            self.image_style
         )
 
         logger.info("Sending transcription to Gemini for scene analysis")
@@ -81,24 +83,33 @@ class SceneAnalyzer:
         self,
         transcription_data: dict,
         min_duration: float,
-        max_duration: float
+        max_duration: float,
+        image_style: str = ""
     ) -> str:
         """Constrói prompt para o Gemini."""
+
+        style_instruction = ""
+        if image_style:
+            style_instruction = f"""
+ESTILO VISUAL OBRIGATÓRIO:
+Todos os prompts de imagem DEVEM incluir este estilo no final: "{image_style}"
+"""
 
         return f"""Você é um diretor de arte criando um vídeo.
 
 Receba esta transcrição com timestamps e divida em cenas visuais.
-
+{style_instruction}
 REGRAS OBRIGATÓRIAS:
 1. Cada cena deve ter entre {min_duration} e {max_duration} segundos
 2. NUNCA corte no meio de uma frase ou ideia
 3. Use os timestamps das palavras para definir início/fim precisos
 4. Ajuste os timestamps para coincidir com pausas naturais na fala
 5. Gere um prompt de imagem cinematográfico para cada cena
-6. Os prompts devem ser em INGLÊS, detalhados, no estilo: "cinematic shot of..., dramatic lighting, 8k, hyperrealistic"
-7. Mantenha consistência visual entre todas as cenas (mesmo estilo, paleta de cores, atmosfera)
-8. Classifique o mood emocional de cada cena: upbeat, dramatic, calm, emotional, inspiring, dark, neutral, epic, suspense
-9. Identifique pontos onde o mood muda significativamente para transição musical
+6. Os prompts devem ser em INGLÊS, detalhados, descrevendo a cena visualmente
+7. IMPORTANTE: Cada prompt DEVE terminar com o estilo visual definido acima
+8. Mantenha consistência visual entre todas as cenas (mesmo estilo, paleta de cores, atmosfera)
+9. Classifique o mood emocional de cada cena: upbeat, dramatic, calm, emotional, inspiring, dark, neutral, epic, suspense
+10. Identifique pontos onde o mood muda significativamente para transição musical
 
 TRANSCRIÇÃO COM TIMESTAMPS:
 {json.dumps(transcription_data, ensure_ascii=False, indent=2)}

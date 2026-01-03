@@ -336,6 +336,21 @@ export function ApiConfig() {
                 <option value="1280x720">1280x720 (HD)</option>
               </select>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Estilo Visual das Imagens
+              </label>
+              <textarea
+                value={localConfig.wavespeed.imageStyle || ''}
+                onChange={(e) => updateField('wavespeed.imageStyle', e.target.value)}
+                placeholder="cinematic, dramatic lighting, 8k, hyperrealistic, professional photography"
+                rows={3}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Este estilo será adicionado a todos os prompts de imagem gerados
+              </p>
+            </div>
             <button
               onClick={() => handleTestApi('wavespeed')}
               disabled={testingApi === 'wavespeed'}

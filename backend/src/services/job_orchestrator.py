@@ -157,7 +157,8 @@ class JobOrchestrator:
 
             scene_analyzer = SceneAnalyzer(
                 api_key=self.config.api.gemini.api_key,
-                model=self.config.api.gemini.model
+                model=self.config.api.gemini.model,
+                image_style=self.config.api.wavespeed.image_style
             )
 
             scene_analysis = await scene_analyzer.analyze(

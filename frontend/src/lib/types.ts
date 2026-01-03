@@ -11,12 +11,13 @@ export interface ApiConfig {
   };
   gemini: {
     apiKey: string;
-    model: 'gemini-2.0-flash' | 'gemini-2.5-pro';
+    model: 'gemini-2.0-flash' | 'gemini-2.0-flash-lite' | 'gemini-2.5-pro';
   };
   wavespeed: {
     apiKey: string;
-    model: 'flux-schnell' | 'flux-dev';
+    model: 'flux-dev-ultra-fast' | 'flux-schnell' | 'flux-dev';
     resolution: '1920x1080' | '1280x720' | '1080x1920';
+    imageStyle?: string;
   };
   suno?: {
     apiKey: string;
