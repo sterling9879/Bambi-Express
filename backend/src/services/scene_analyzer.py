@@ -74,9 +74,11 @@ class SceneAnalyzer:
                 response_mime_type="application/json",
                 response_schema=self.RESPONSE_SCHEMA,
                 temperature=0.7,
+                max_output_tokens=65536,  # Máximo para evitar truncamento
             )
         )
         self.image_style = image_style
+        self._model_name = model  # Salvar para uso em test_connection
 
     async def analyze(
         self,
@@ -406,7 +408,7 @@ RETORNE APENAS JSON VÁLIDO (sem markdown, sem ```):
         """Testa conexão com a API."""
         try:
             # Usar modelo sem JSON mode para teste simples
-            test_model = genai.GenerativeModel(self.model.model_name)
+            test_model = genai.GenerativeModel(self._model_name)
             response = await test_model.generate_content_async(
                 "Say 'OK' if you can hear me."
             )
