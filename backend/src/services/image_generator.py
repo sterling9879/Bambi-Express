@@ -121,9 +121,17 @@ class WaveSpeedGenerator:
 
                 data = response.json()
 
-                # Check if we need to poll for result
-                if "requestId" in data:
-                    # Need to poll for result
+                # Check response format and get image URL
+                if "data" in data and "id" in data["data"]:
+                    # Async mode - need to poll for result
+                    request_id = data["data"]["id"]
+                    poll_url = data["data"]["urls"]["get"]
+                    image_url = await self._poll_for_result(client, request_id, poll_url)
+                elif "data" in data and "outputs" in data["data"] and data["data"]["outputs"]:
+                    # Sync mode - result available immediately
+                    image_url = data["data"]["outputs"][0]
+                elif "requestId" in data:
+                    # Legacy format
                     request_id = data["requestId"]
                     image_url = await self._poll_for_result(client, request_id)
                 elif "images" in data:
@@ -163,33 +171,45 @@ class WaveSpeedGenerator:
         self,
         client: httpx.AsyncClient,
         request_id: str,
+        poll_url: Optional[str] = None,
         max_attempts: int = 60
     ) -> str:
         """Poll for image generation result."""
-        for _ in range(max_attempts):
+        url = poll_url or f"{self.BASE_URL}/predictions/{request_id}/result"
+
+        for attempt in range(max_attempts):
             response = await client.get(
-                f"{self.BASE_URL}/predictions/{request_id}/result",
+                url,
                 headers={"Authorization": f"Bearer {self.api_key}"}
             )
             response.raise_for_status()
 
             data = response.json()
-            status = data.get("status")
+
+            # Handle nested data structure
+            inner_data = data.get("data", data)
+            status = inner_data.get("status")
+
+            logger.debug(f"Poll attempt {attempt + 1}: status={status}")
 
             if status == "completed":
-                if "output" in data and "images" in data["output"]:
-                    return data["output"]["images"][0]
-                elif "images" in data:
-                    return data["images"][0]["url"]
+                # Check various output formats
+                if "outputs" in inner_data and inner_data["outputs"]:
+                    return inner_data["outputs"][0]
+                elif "output" in inner_data and "images" in inner_data["output"]:
+                    return inner_data["output"]["images"][0]
+                elif "images" in inner_data:
+                    return inner_data["images"][0]["url"] if isinstance(inner_data["images"][0], dict) else inner_data["images"][0]
                 else:
-                    raise ValueError(f"Unexpected completed response: {data}")
+                    raise ValueError(f"Formato de resposta completa inesperado: {data}")
 
             elif status == "failed":
-                raise RuntimeError(f"Image generation failed: {data.get('error')}")
+                error_msg = inner_data.get("error") or data.get("message", "Erro desconhecido")
+                raise RuntimeError(f"Geração de imagem falhou: {error_msg}")
 
             await asyncio.sleep(2)
 
-        raise TimeoutError("Image generation timed out")
+        raise TimeoutError("Tempo limite excedido na geração de imagem")
 
     async def get_remaining_credits(self) -> float:
         """Retorna créditos restantes em dólares."""
