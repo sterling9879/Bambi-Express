@@ -5,14 +5,25 @@ Serviço de geração de imagens usando WaveSpeed Flux.
 import httpx
 import asyncio
 import time
+import random
 from pathlib import Path
 from typing import Optional, Callable, List
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import logging
 
 from ..models.video import Scene, GeneratedImage
 
 logger = logging.getLogger(__name__)
+
+
+class RetryableError(Exception):
+    """Erro que pode ser retentado."""
+    pass
+
+
+class NonRetryableError(Exception):
+    """Erro que não deve ser retentado (ex: API key inválida)."""
+    pass
 
 
 class WaveSpeedGenerator:
@@ -22,11 +33,14 @@ class WaveSpeedGenerator:
     Features:
     - Processamento em batch com fila
     - Retry automático com backoff
+    - Retry de imagens falhas no final
     - Suporte a múltiplos modelos (schnell, dev)
     - Resolução configurável
     """
 
     BASE_URL = "https://api.wavespeed.ai/api/v3"
+    MAX_RETRIES = 5
+    RETRY_DELAY_BASE = 2  # segundos
 
     def __init__(
         self,
@@ -50,6 +64,7 @@ class WaveSpeedGenerator:
         """
         Gera imagens para todas as cenas.
         Continua mesmo se algumas imagens falharem.
+        Tenta novamente as que falharam no final.
 
         Args:
             scenes: Lista de Scene do scene_analyzer
@@ -60,34 +75,94 @@ class WaveSpeedGenerator:
             Lista de GeneratedImage (inclui placeholders para falhas)
         """
         semaphore = asyncio.Semaphore(max_concurrent)
+        results: dict[int, GeneratedImage] = {}
+        failed_scenes: List[Scene] = []
         completed = 0
-        failed_scenes = []
+        total = len(scenes)
 
-        async def generate_with_semaphore(scene: Scene) -> GeneratedImage:
+        async def generate_with_semaphore(scene: Scene) -> None:
             nonlocal completed
             async with semaphore:
-                try:
-                    result = await self._generate_image(scene)
-                    completed += 1
-                    if progress_callback:
-                        progress_callback(completed, len(scenes))
-                    return result
-                except Exception as e:
-                    logger.error(f"Failed to generate image for scene {scene.scene_index} after all retries: {e}")
-                    failed_scenes.append(scene.scene_index)
-                    completed += 1
-                    if progress_callback:
-                        progress_callback(completed, len(scenes))
-                    # Retornar placeholder para manter a ordem das cenas
-                    return await self._create_placeholder_image(scene)
+                # Pequeno delay aleatório para evitar rate limiting
+                await asyncio.sleep(random.uniform(0.1, 0.5))
 
+                result = await self._generate_with_retries(scene)
+                if result:
+                    results[scene.scene_index] = result
+                else:
+                    failed_scenes.append(scene)
+
+                completed += 1
+                if progress_callback:
+                    progress_callback(completed, total)
+
+        # Primeira rodada de geração
         tasks = [generate_with_semaphore(scene) for scene in scenes]
-        results = await asyncio.gather(*tasks)
+        await asyncio.gather(*tasks)
 
+        # Segunda rodada: tentar novamente as que falharam
         if failed_scenes:
-            logger.warning(f"Failed to generate images for scenes: {failed_scenes}. Used placeholders.")
+            logger.info(f"Retrying {len(failed_scenes)} failed images...")
+            await asyncio.sleep(5)  # Esperar um pouco antes de retentar
 
-        return sorted(results, key=lambda x: x.scene_index)
+            for scene in failed_scenes.copy():
+                result = await self._generate_with_retries(scene, is_retry=True)
+                if result:
+                    results[scene.scene_index] = result
+                    failed_scenes.remove(scene)
+                    logger.info(f"Successfully generated scene {scene.scene_index} on retry")
+
+        # Terceira rodada: última tentativa com delay maior
+        if failed_scenes:
+            logger.info(f"Final retry for {len(failed_scenes)} remaining failed images...")
+            await asyncio.sleep(10)
+
+            for scene in failed_scenes.copy():
+                result = await self._generate_with_retries(scene, is_retry=True, max_attempts=3)
+                if result:
+                    results[scene.scene_index] = result
+                    failed_scenes.remove(scene)
+                    logger.info(f"Successfully generated scene {scene.scene_index} on final retry")
+
+        # Criar placeholders para as que ainda falharam
+        if failed_scenes:
+            logger.warning(f"Creating placeholders for {len(failed_scenes)} scenes that failed all retries")
+            for scene in failed_scenes:
+                results[scene.scene_index] = await self._create_placeholder_image(scene)
+
+        # Ordenar por índice de cena
+        return [results[i] for i in sorted(results.keys())]
+
+    async def _generate_with_retries(
+        self,
+        scene: Scene,
+        is_retry: bool = False,
+        max_attempts: int = None
+    ) -> Optional[GeneratedImage]:
+        """Tenta gerar imagem com múltiplas tentativas."""
+        attempts = max_attempts or self.MAX_RETRIES
+        last_error = None
+
+        for attempt in range(attempts):
+            try:
+                if attempt > 0 or is_retry:
+                    # Backoff exponencial com jitter
+                    delay = self.RETRY_DELAY_BASE * (2 ** attempt) + random.uniform(0, 1)
+                    logger.info(f"Retry {attempt + 1}/{attempts} for scene {scene.scene_index} after {delay:.1f}s")
+                    await asyncio.sleep(delay)
+
+                return await self._generate_image(scene)
+
+            except NonRetryableError as e:
+                logger.error(f"Non-retryable error for scene {scene.scene_index}: {e}")
+                return None
+
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Attempt {attempt + 1}/{attempts} failed for scene {scene.scene_index}: {e}")
+
+        logger.error(f"All {attempts} attempts failed for scene {scene.scene_index}: {last_error}")
+        return None
 
     async def _create_placeholder_image(self, scene: Scene) -> GeneratedImage:
         """Cria uma imagem placeholder quando a geração falha."""
@@ -144,11 +219,6 @@ class WaveSpeedGenerator:
             generation_time_ms=0
         )
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=60),
-        reraise=True
-    )
     async def _generate_image(self, scene: Scene) -> GeneratedImage:
         """Gera imagem para uma única cena."""
         start_time = time.time()
@@ -156,7 +226,7 @@ class WaveSpeedGenerator:
         logger.info(f"Generating image for scene {scene.scene_index}")
 
         try:
-            async with httpx.AsyncClient(timeout=120) as client:
+            async with httpx.AsyncClient(timeout=180) as client:
                 # Iniciar geração
                 response = await client.post(
                     f"{self.BASE_URL}/wavespeed-ai/{self.model}",
@@ -178,15 +248,22 @@ class WaveSpeedGenerator:
                     }
                 )
 
+                # Erros que NÃO devem ser retentados
                 if response.status_code == 401:
-                    raise RuntimeError("WaveSpeed API: Chave de API inválida ou expirada")
+                    raise NonRetryableError("WaveSpeed API: Chave de API inválida ou expirada")
                 elif response.status_code == 402:
-                    raise RuntimeError("WaveSpeed API: Créditos insuficientes")
+                    raise NonRetryableError("WaveSpeed API: Créditos insuficientes")
+                # Erros que DEVEM ser retentados
                 elif response.status_code == 429:
-                    raise RuntimeError("WaveSpeed API: Limite de requisições excedido, aguarde um momento")
+                    raise RetryableError("WaveSpeed API: Limite de requisições excedido, aguarde um momento")
+                elif response.status_code >= 500:
+                    # Erros de servidor - sempre retentar
+                    error_detail = response.text[:200] if response.text else "Server error"
+                    raise RetryableError(f"WaveSpeed API erro {response.status_code}: {error_detail}")
                 elif response.status_code >= 400:
-                    error_detail = response.text
-                    raise RuntimeError(f"WaveSpeed API erro {response.status_code}: {error_detail}")
+                    # Outros erros 4xx - retentar por segurança
+                    error_detail = response.text[:200] if response.text else "Client error"
+                    raise RetryableError(f"WaveSpeed API erro {response.status_code}: {error_detail}")
 
                 data = response.json()
 
@@ -229,12 +306,21 @@ class WaveSpeedGenerator:
                     generation_time_ms=generation_time
                 )
 
+        except (NonRetryableError, RetryableError):
+            # Re-raise para ser tratado pelo caller
+            raise
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error generating image: {e}")
-            raise RuntimeError(f"Erro HTTP na geração de imagem: {e.response.status_code}")
+            raise RetryableError(f"Erro HTTP na geração de imagem: {e.response.status_code}")
+        except httpx.TimeoutException as e:
+            logger.error(f"Timeout generating image: {e}")
+            raise RetryableError(f"Timeout na geração de imagem")
         except httpx.RequestError as e:
             logger.error(f"Request error generating image: {e}")
-            raise RuntimeError(f"Erro de conexão com WaveSpeed API: {str(e)}")
+            raise RetryableError(f"Erro de conexão com WaveSpeed API: {str(e)}")
+        except Exception as e:
+            logger.error(f"Unexpected error generating image: {e}")
+            raise RetryableError(f"Erro inesperado: {str(e)}")
 
     async def _poll_for_result(
         self,
