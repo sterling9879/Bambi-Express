@@ -77,7 +77,8 @@ class WaveSpeedGenerator:
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=60)
+        wait=wait_exponential(multiplier=1, min=4, max=60),
+        reraise=True
     )
     async def _generate_image(self, scene: Scene) -> GeneratedImage:
         """Gera imagem para uma única cena."""
@@ -85,55 +86,72 @@ class WaveSpeedGenerator:
 
         logger.info(f"Generating image for scene {scene.scene_index}")
 
-        async with httpx.AsyncClient(timeout=120) as client:
-            # Iniciar geração
-            response = await client.post(
-                f"{self.BASE_URL}/wavespeed-ai/{self.model}/txt2img",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "prompt": scene.image_prompt,
-                    "width": self.width,
-                    "height": self.height,
-                    "num_images": 1
-                }
-            )
-            response.raise_for_status()
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                # Iniciar geração
+                response = await client.post(
+                    f"{self.BASE_URL}/wavespeed-ai/{self.model}/txt2img",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "prompt": scene.image_prompt,
+                        "width": self.width,
+                        "height": self.height,
+                        "num_images": 1
+                    }
+                )
 
-            data = response.json()
+                if response.status_code == 401:
+                    raise RuntimeError("WaveSpeed API: Chave de API inválida ou expirada")
+                elif response.status_code == 402:
+                    raise RuntimeError("WaveSpeed API: Créditos insuficientes")
+                elif response.status_code == 429:
+                    raise RuntimeError("WaveSpeed API: Limite de requisições excedido, aguarde um momento")
+                elif response.status_code >= 400:
+                    error_detail = response.text
+                    raise RuntimeError(f"WaveSpeed API erro {response.status_code}: {error_detail}")
 
-            # Check if we need to poll for result
-            if "requestId" in data:
-                # Need to poll for result
-                request_id = data["requestId"]
-                image_url = await self._poll_for_result(client, request_id)
-            elif "images" in data:
-                image_url = data["images"][0]["url"]
-            elif "output" in data and "images" in data["output"]:
-                image_url = data["output"]["images"][0]
-            else:
-                raise ValueError(f"Unexpected response format: {data}")
+                data = response.json()
 
-            # Baixar imagem
-            image_response = await client.get(image_url)
-            image_response.raise_for_status()
+                # Check if we need to poll for result
+                if "requestId" in data:
+                    # Need to poll for result
+                    request_id = data["requestId"]
+                    image_url = await self._poll_for_result(client, request_id)
+                elif "images" in data:
+                    image_url = data["images"][0]["url"]
+                elif "output" in data and "images" in data["output"]:
+                    image_url = data["output"]["images"][0]
+                else:
+                    raise ValueError(f"Formato de resposta inesperado: {data}")
 
-            # Salvar
-            output_path = self.output_dir / f"scene_{scene.scene_index}.png"
-            output_path.write_bytes(image_response.content)
+                # Baixar imagem
+                image_response = await client.get(image_url)
+                image_response.raise_for_status()
 
-            generation_time = int((time.time() - start_time) * 1000)
+                # Salvar
+                output_path = self.output_dir / f"scene_{scene.scene_index}.png"
+                output_path.write_bytes(image_response.content)
 
-            logger.info(f"Generated image for scene {scene.scene_index} in {generation_time}ms")
+                generation_time = int((time.time() - start_time) * 1000)
 
-            return GeneratedImage(
-                scene_index=scene.scene_index,
-                image_path=str(output_path),
-                prompt_used=scene.image_prompt,
-                generation_time_ms=generation_time
-            )
+                logger.info(f"Generated image for scene {scene.scene_index} in {generation_time}ms")
+
+                return GeneratedImage(
+                    scene_index=scene.scene_index,
+                    image_path=str(output_path),
+                    prompt_used=scene.image_prompt,
+                    generation_time_ms=generation_time
+                )
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error generating image: {e}")
+            raise RuntimeError(f"Erro HTTP na geração de imagem: {e.response.status_code}")
+        except httpx.RequestError as e:
+            logger.error(f"Request error generating image: {e}")
+            raise RuntimeError(f"Erro de conexão com WaveSpeed API: {str(e)}")
 
     async def _poll_for_result(
         self,
