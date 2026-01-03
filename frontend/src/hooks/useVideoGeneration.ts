@@ -16,7 +16,7 @@ interface UseVideoGenerationReturn {
   textAnalysis: TextAnalysis | null;
 
   analyzeText: (text: string) => Promise<TextAnalysis>;
-  startGeneration: (text: string) => Promise<void>;
+  startGeneration: (text: string, title?: string, channelId?: string) => Promise<void>;
   cancelGeneration: () => Promise<void>;
   reset: () => void;
 }
@@ -80,13 +80,13 @@ export function useVideoGeneration(
   }, []);
 
   const startGeneration = useCallback(
-    async (text: string) => {
+    async (text: string, title?: string, channelId?: string) => {
       setIsGenerating(true);
       setError(null);
       setResult(null);
 
       try {
-        const response = await videoApi.generate(text);
+        const response = await videoApi.generate(text, title, channelId);
         jobIdRef.current = response.jobId;
 
         // Start polling

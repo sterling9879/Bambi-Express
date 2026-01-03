@@ -232,3 +232,71 @@ export interface Voice {
   category?: string;
   labels?: Record<string, string>;
 }
+
+// History Types
+export interface Channel {
+  id: string;
+  name: string;
+  description?: string;
+  color: string;
+  createdAt: string;
+  videoCount: number;
+}
+
+export interface ChannelCreate {
+  name: string;
+  description?: string;
+  color?: string;
+}
+
+export interface VideoHistory {
+  id: string;
+  jobId: string;
+  title: string;
+  channelId?: string;
+  channelName?: string;
+  textPreview: string;
+  videoPath: string;
+  videoUrl?: string;
+  thumbnailUrl?: string;
+  durationSeconds: number;
+  scenesCount: number;
+  fileSize: number;
+  resolution: string;
+  createdAt: string;
+}
+
+export interface VideoHistoryList {
+  videos: VideoHistory[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export type ElementType = 'image' | 'audio' | 'narration' | 'music';
+
+export interface Element {
+  id: string;
+  jobId: string;
+  elementType: ElementType;
+  filePath: string;
+  fileUrl?: string;
+  sceneIndex?: number;
+  prompt?: string;
+  durationMs?: number;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface ElementList {
+  elements: Element[];
+  total: number;
+}
+
+export interface HistoryStats {
+  totalVideos: number;
+  totalDurationSeconds: number;
+  totalSizeBytes: number;
+  videosByChannel: Record<string, number>;
+  recentVideos: VideoHistory[];
+}

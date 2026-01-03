@@ -48,6 +48,8 @@ async def analyze_text(request: TextAnalysisRequest):
 
 class GenerateVideoRequest(BaseModel):
     text: str
+    title: Optional[str] = None
+    channel_id: Optional[str] = None
     config_override: Optional[Dict[str, Any]] = None
 
 
@@ -89,10 +91,15 @@ async def generate_video(
     processor = TextProcessor()
     estimated_duration = processor.estimate_duration(text)
 
+    # Generate title if not provided
+    title = request.title or f"Vídeo {datetime.now().strftime('%d/%m %H:%M')}"
+
     # Store job info
     _jobs_db[job_id] = {
         "id": job_id,
         "text": text,
+        "title": title,
+        "channel_id": request.channel_id,
         "config_override": request.config_override,
         "status": JobStatusEnum.PENDING.value,
         "progress": 0,
@@ -109,6 +116,8 @@ async def generate_video(
         _run_video_generation,
         job_id,
         text,
+        title,
+        request.channel_id,
         request.config_override
     )
 
@@ -123,6 +132,8 @@ async def generate_video(
 async def _run_video_generation(
     job_id: str,
     text: str,
+    title: str,
+    channel_id: Optional[str],
     config_override: Optional[Dict[str, Any]] = None
 ):
     """
@@ -131,7 +142,9 @@ async def _run_video_generation(
     import json
     from pathlib import Path
     from ..services.job_orchestrator import JobOrchestrator
+    from ..services.history_service import get_history_service
     from ..models.job import JobStatus
+    from ..models.history import VideoHistoryCreate
 
     def status_callback(status: JobStatus):
         """Update job status in memory."""
@@ -173,7 +186,11 @@ async def _run_video_generation(
             status_callback=status_callback
         )
 
-        video_path = await orchestrator.run(job_id, text)
+        result = await orchestrator.run(job_id, text)
+
+        # Get video info
+        video_path = result if isinstance(result, str) else result.get("video_path", result)
+        video_file = Path(video_path)
 
         # Update job as completed
         _jobs_db[job_id].update({
@@ -184,6 +201,35 @@ async def _run_video_generation(
                 "video_path": video_path
             }
         })
+
+        # Save to history
+        try:
+            history_service = get_history_service()
+
+            # Get video file stats
+            file_size = video_file.stat().st_size if video_file.exists() else 0
+
+            # Get details from orchestrator if available
+            details = _jobs_db[job_id].get("details", {})
+            duration = details.get("duration_seconds", 0)
+            scenes_count = details.get("scenes_count", 0)
+            resolution = f"{config.ffmpeg.resolution.width}x{config.ffmpeg.resolution.height}"
+
+            history_service.add_video(VideoHistoryCreate(
+                job_id=job_id,
+                title=title,
+                channel_id=channel_id,
+                text_preview=text[:200],
+                video_path=video_path,
+                duration_seconds=duration,
+                scenes_count=scenes_count,
+                file_size=file_size,
+                resolution=resolution
+            ))
+        except Exception as hist_error:
+            # Log but don't fail the job
+            import logging
+            logging.error(f"Failed to save video to history: {hist_error}")
 
     except Exception as e:
         # Update job as failed

@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .routers import config_router, music_router, video_router, jobs_router
+from .routers.history import router as history_router
 
 # Configure logging
 logging.basicConfig(
@@ -65,6 +66,7 @@ app.include_router(config_router)
 app.include_router(music_router)
 app.include_router(video_router)
 app.include_router(jobs_router)
+app.include_router(history_router)
 
 # Mount static files for outputs
 outputs_dir = Path("storage/outputs")
@@ -97,6 +99,7 @@ async def api_info():
             "music": "/api/music",
             "video": "/api/video",
             "jobs": "/api/jobs",
+            "history": "/api/history",
         },
         "documentation": "/docs",
     }

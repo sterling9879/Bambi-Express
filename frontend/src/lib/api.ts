@@ -11,6 +11,14 @@ import type {
   ApiTestResult,
   CreditsResponse,
   Voice,
+  Channel,
+  ChannelCreate,
+  VideoHistory,
+  VideoHistoryList,
+  Element,
+  ElementList,
+  ElementType,
+  HistoryStats,
 } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
@@ -170,10 +178,14 @@ export const videoApi = {
 
   generate: async (
     text: string,
+    title?: string,
+    channelId?: string,
     configOverride?: Record<string, unknown>
   ): Promise<{ jobId: string; status: string; message: string }> => {
     const { data } = await api.post('/api/video/generate', {
       text,
+      title,
+      channel_id: channelId,
       config_override: configOverride ? toSnakeCase(configOverride) : undefined,
     });
     return toCamelCase(data);
@@ -210,6 +222,86 @@ export const jobsApi = {
 
   delete: async (jobId: string): Promise<void> => {
     await api.delete(`/api/jobs/${jobId}`);
+  },
+};
+
+// Channels API
+export const channelsApi = {
+  list: async (): Promise<Channel[]> => {
+    const { data } = await api.get('/api/history/channels');
+    return toCamelCase<Channel[]>(data);
+  },
+
+  get: async (channelId: string): Promise<Channel> => {
+    const { data } = await api.get(`/api/history/channels/${channelId}`);
+    return toCamelCase<Channel>(data);
+  },
+
+  create: async (channel: ChannelCreate): Promise<Channel> => {
+    const { data } = await api.post('/api/history/channels', toSnakeCase(channel));
+    return toCamelCase<Channel>(data);
+  },
+
+  update: async (channelId: string, updates: Partial<ChannelCreate>): Promise<Channel> => {
+    const { data } = await api.put(`/api/history/channels/${channelId}`, toSnakeCase(updates));
+    return toCamelCase<Channel>(data);
+  },
+
+  delete: async (channelId: string): Promise<void> => {
+    await api.delete(`/api/history/channels/${channelId}`);
+  },
+};
+
+// History API
+export const historyApi = {
+  listVideos: async (params?: {
+    channelId?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<VideoHistoryList> => {
+    const { data } = await api.get('/api/history/videos', { params: toSnakeCase(params) });
+    return toCamelCase<VideoHistoryList>(data);
+  },
+
+  getVideo: async (videoId: string): Promise<VideoHistory> => {
+    const { data } = await api.get(`/api/history/videos/${videoId}`);
+    return toCamelCase<VideoHistory>(data);
+  },
+
+  deleteVideo: async (videoId: string): Promise<void> => {
+    await api.delete(`/api/history/videos/${videoId}`);
+  },
+
+  listElements: async (params?: {
+    jobId?: string;
+    elementType?: ElementType;
+    limit?: number;
+    offset?: number;
+  }): Promise<ElementList> => {
+    const { data } = await api.get('/api/history/elements', { params: toSnakeCase(params) });
+    return toCamelCase<ElementList>(data);
+  },
+
+  getElement: async (elementId: string): Promise<Element> => {
+    const { data } = await api.get(`/api/history/elements/${elementId}`);
+    return toCamelCase<Element>(data);
+  },
+
+  deleteElement: async (elementId: string): Promise<void> => {
+    await api.delete(`/api/history/elements/${elementId}`);
+  },
+
+  getStats: async (): Promise<HistoryStats> => {
+    const { data } = await api.get('/api/history/stats');
+    return toCamelCase<HistoryStats>(data);
+  },
+
+  getVideoDownloadUrl: (videoId: string): string => {
+    return `${API_BASE}/api/history/videos/${videoId}/download`;
+  },
+
+  getElementUrl: (elementId: string): string => {
+    return `${API_BASE}/api/history/elements/${elementId}/file`;
   },
 };
 
