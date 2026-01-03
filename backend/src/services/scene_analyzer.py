@@ -25,15 +25,56 @@ class SceneAnalyzer:
     - Identificação de transições musicais
     """
 
+    # Schema JSON para a resposta do Gemini
+    RESPONSE_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "style_guide": {"type": "string"},
+            "scenes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "scene_index": {"type": "integer"},
+                        "text": {"type": "string"},
+                        "start_ms": {"type": "integer"},
+                        "end_ms": {"type": "integer"},
+                        "duration_ms": {"type": "integer"},
+                        "image_prompt": {"type": "string"},
+                        "mood": {"type": "string"},
+                        "mood_intensity": {"type": "number"},
+                        "is_mood_transition": {"type": "boolean"}
+                    },
+                    "required": ["scene_index", "text", "start_ms", "end_ms", "duration_ms", "image_prompt", "mood"]
+                }
+            },
+            "music_cues": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "timestamp_ms": {"type": "integer"},
+                        "mood": {"type": "string"},
+                        "suggestion": {"type": "string"}
+                    },
+                    "required": ["timestamp_ms", "mood", "suggestion"]
+                }
+            }
+        },
+        "required": ["scenes"]
+    }
+
     def __init__(self, api_key: str, model: str = "gemini-2.0-flash", image_style: str = ""):
         genai.configure(api_key=api_key)
         # Configurar modelo com JSON mode para garantir resposta válida
+        # Usando camelCase para SDK antigo (google-generativeai)
         self.model = genai.GenerativeModel(
             model,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                temperature=0.7,
-            )
+            generation_config={
+                "responseMimeType": "application/json",
+                "responseSchema": self.RESPONSE_SCHEMA,
+                "temperature": 0.7,
+            }
         )
         self.image_style = image_style
 
