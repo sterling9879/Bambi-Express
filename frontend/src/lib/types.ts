@@ -281,6 +281,7 @@ export interface Element {
   elementType: ElementType;
   filePath: string;
   fileUrl?: string;
+  fileSize: number;
   sceneIndex?: number;
   prompt?: string;
   durationMs?: number;
