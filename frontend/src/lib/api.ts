@@ -15,6 +15,35 @@ import type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 
+// Convert snake_case to camelCase
+function snakeToCamel(str: string): string {
+  return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+}
+
+// Convert camelCase to snake_case
+function camelToSnake(str: string): string {
+  return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+}
+
+// Deep transform object keys
+function transformKeys(obj: unknown, transformer: (key: string) => string): unknown {
+  if (Array.isArray(obj)) {
+    return obj.map((item) => transformKeys(item, transformer));
+  }
+  if (obj !== null && typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.entries(obj as Record<string, unknown>).map(([key, value]) => [
+        transformer(key),
+        transformKeys(value, transformer),
+      ])
+    );
+  }
+  return obj;
+}
+
+const toCamelCase = <T>(data: unknown): T => transformKeys(data, snakeToCamel) as T;
+const toSnakeCase = <T>(data: unknown): T => transformKeys(data, camelToSnake) as T;
+
 const api = axios.create({
   baseURL: API_BASE,
   headers: {
@@ -26,42 +55,42 @@ const api = axios.create({
 export const configApi = {
   get: async (): Promise<FullConfig> => {
     const { data } = await api.get('/api/config');
-    return data;
+    return toCamelCase<FullConfig>(data);
   },
 
   update: async (config: FullConfig): Promise<FullConfig> => {
-    const { data } = await api.put('/api/config', config);
-    return data;
+    const { data } = await api.put('/api/config', toSnakeCase(config));
+    return toCamelCase<FullConfig>(data);
   },
 
   updateApi: async (apiConfig: ApiConfig): Promise<ApiConfig> => {
-    const { data } = await api.patch('/api/config/api', apiConfig);
-    return data;
+    const { data } = await api.patch('/api/config/api', toSnakeCase(apiConfig));
+    return toCamelCase<ApiConfig>(data);
   },
 
   updateMusic: async (musicConfig: MusicConfig): Promise<MusicConfig> => {
-    const { data } = await api.patch('/api/config/music', musicConfig);
-    return data;
+    const { data } = await api.patch('/api/config/music', toSnakeCase(musicConfig));
+    return toCamelCase<MusicConfig>(data);
   },
 
   updateFFmpeg: async (ffmpegConfig: FFmpegConfig): Promise<FFmpegConfig> => {
-    const { data } = await api.patch('/api/config/ffmpeg', ffmpegConfig);
-    return data;
+    const { data } = await api.patch('/api/config/ffmpeg', toSnakeCase(ffmpegConfig));
+    return toCamelCase<FFmpegConfig>(data);
   },
 
   testApi: async (apiName: string): Promise<ApiTestResult> => {
     const { data } = await api.post('/api/config/test-api', { api: apiName });
-    return data;
+    return toCamelCase<ApiTestResult>(data);
   },
 
   getCredits: async (): Promise<CreditsResponse> => {
     const { data } = await api.get('/api/config/credits');
-    return data;
+    return toCamelCase<CreditsResponse>(data);
   },
 
   getVoices: async (): Promise<Voice[]> => {
     const { data } = await api.get('/api/config/voices');
-    return data.voices;
+    return toCamelCase<Voice[]>(data.voices);
   },
 };
 
@@ -74,12 +103,12 @@ export const musicApi = {
     limit?: number;
   }): Promise<{ tracks: MusicTrack[]; total: number }> => {
     const { data } = await api.get('/api/music', { params });
-    return data;
+    return toCamelCase<{ tracks: MusicTrack[]; total: number }>(data);
   },
 
   get: async (trackId: string): Promise<MusicTrack> => {
     const { data } = await api.get(`/api/music/${trackId}`);
-    return data;
+    return toCamelCase<MusicTrack>(data);
   },
 
   upload: async (
@@ -97,15 +126,15 @@ export const musicApi = {
         'Content-Type': 'multipart/form-data',
       },
     });
-    return data;
+    return toCamelCase<MusicTrack>(data);
   },
 
   update: async (
     trackId: string,
     updates: Partial<MusicTrack>
   ): Promise<MusicTrack> => {
-    const { data } = await api.put(`/api/music/${trackId}`, updates);
-    return data;
+    const { data } = await api.put(`/api/music/${trackId}`, toSnakeCase(updates));
+    return toCamelCase<MusicTrack>(data);
   },
 
   delete: async (trackId: string): Promise<void> => {
@@ -128,7 +157,7 @@ export const musicApi = {
     totalSizeBytes: number;
   }> => {
     const { data } = await api.get('/api/music/stats');
-    return data;
+    return toCamelCase(data);
   },
 };
 
@@ -136,7 +165,7 @@ export const musicApi = {
 export const videoApi = {
   analyzeText: async (text: string): Promise<TextAnalysis> => {
     const { data } = await api.post('/api/video/analyze-text', { text });
-    return data;
+    return toCamelCase<TextAnalysis>(data);
   },
 
   generate: async (
@@ -145,9 +174,9 @@ export const videoApi = {
   ): Promise<{ jobId: string; status: string; message: string }> => {
     const { data } = await api.post('/api/video/generate', {
       text,
-      config_override: configOverride,
+      config_override: configOverride ? toSnakeCase(configOverride) : undefined,
     });
-    return data;
+    return toCamelCase(data);
   },
 };
 
@@ -158,17 +187,17 @@ export const jobsApi = {
     limit?: number;
   }): Promise<{ jobs: Job[]; total: number }> => {
     const { data } = await api.get('/api/jobs', { params });
-    return data;
+    return toCamelCase<{ jobs: Job[]; total: number }>(data);
   },
 
   getStatus: async (jobId: string): Promise<Job> => {
     const { data } = await api.get(`/api/jobs/${jobId}/status`);
-    return data;
+    return toCamelCase<Job>(data);
   },
 
   getResult: async (jobId: string): Promise<JobResult> => {
     const { data } = await api.get(`/api/jobs/${jobId}/result`);
-    return data;
+    return toCamelCase<JobResult>(data);
   },
 
   getDownloadUrl: (jobId: string): string => {
