@@ -27,7 +27,14 @@ class SceneAnalyzer:
 
     def __init__(self, api_key: str, model: str = "gemini-2.0-flash", image_style: str = ""):
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model)
+        # Configurar modelo com JSON mode para garantir resposta válida
+        self.model = genai.GenerativeModel(
+            model,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                temperature=0.7,
+            )
+        )
         self.image_style = image_style
 
     async def analyze(
@@ -357,7 +364,9 @@ RETORNE APENAS JSON VÁLIDO (sem markdown, sem ```):
     async def test_connection(self) -> dict:
         """Testa conexão com a API."""
         try:
-            response = await self.model.generate_content_async(
+            # Usar modelo sem JSON mode para teste simples
+            test_model = genai.GenerativeModel(self.model.model_name)
+            response = await test_model.generate_content_async(
                 "Say 'OK' if you can hear me."
             )
             return {
