@@ -109,43 +109,67 @@ class SceneAnalyzer:
         all_scenes = []
         all_music_cues = []
         style_guide = ""
+        failed_chunks = []
 
         for i, chunk in enumerate(chunks):
             logger.info(f"Processing chunk {i+1}/{len(chunks)}")
 
-            chunk_data = {
-                "segments": [
-                    {
-                        "text": seg.text,
-                        "start_ms": seg.start_ms,
-                        "end_ms": seg.end_ms,
-                        "words": [
-                            {"text": w.text, "start_ms": w.start_ms, "end_ms": w.end_ms}
-                            for w in seg.words
-                        ]
-                    }
-                    for seg in chunk
-                ],
-                "chunk_index": i,
-                "total_chunks": len(chunks),
-            }
+            try:
+                chunk_data = {
+                    "segments": [
+                        {
+                            "text": seg.text,
+                            "start_ms": seg.start_ms,
+                            "end_ms": seg.end_ms,
+                            "words": [
+                                {"text": w.text, "start_ms": w.start_ms, "end_ms": w.end_ms}
+                                for w in seg.words
+                            ]
+                        }
+                        for seg in chunk
+                    ],
+                    "chunk_index": i,
+                    "total_chunks": len(chunks),
+                }
 
-            prompt = self._build_prompt(
-                chunk_data,
-                min_scene_duration,
-                max_scene_duration,
-                self.image_style
-            )
+                prompt = self._build_prompt(
+                    chunk_data,
+                    min_scene_duration,
+                    max_scene_duration,
+                    self.image_style
+                )
 
-            response = await self.model.generate_content_async(prompt)
-            chunk_result = self._parse_response(response.text)
+                response = await self.model.generate_content_async(prompt)
+                chunk_result = self._parse_response(response.text)
 
-            # Usar style_guide do primeiro chunk
-            if i == 0 and chunk_result.style_guide:
-                style_guide = chunk_result.style_guide
+                # Usar style_guide do primeiro chunk bem-sucedido
+                if not style_guide and chunk_result.style_guide:
+                    style_guide = chunk_result.style_guide
 
-            all_scenes.extend(chunk_result.scenes)
-            all_music_cues.extend(chunk_result.music_cues)
+                all_scenes.extend(chunk_result.scenes)
+                all_music_cues.extend(chunk_result.music_cues)
+
+            except Exception as e:
+                logger.error(f"Error processing chunk {i+1}/{len(chunks)}: {e}")
+                failed_chunks.append(i + 1)
+                # Criar cenas básicas para o chunk que falhou
+                for seg in chunk:
+                    fallback_scene = Scene(
+                        scene_index=len(all_scenes),
+                        text=seg.text,
+                        start_ms=seg.start_ms,
+                        end_ms=seg.end_ms,
+                        duration_ms=seg.end_ms - seg.start_ms,
+                        image_prompt=f"Abstract cinematic visualization of: {seg.text[:100]}",
+                        mood="calmo",
+                        mood_intensity=0.5,
+                        is_mood_transition=False
+                    )
+                    all_scenes.append(fallback_scene)
+                continue
+
+        if failed_chunks:
+            logger.warning(f"Chunks that failed: {failed_chunks}. Used fallback scenes.")
 
         # Re-indexar cenas
         for idx, scene in enumerate(all_scenes):
