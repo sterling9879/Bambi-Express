@@ -33,8 +33,9 @@ const defaultApiConfig: ApiConfig = {
   },
   wavespeed: {
     apiKey: '',
-    model: 'flux-schnell',
+    model: 'flux-dev-ultra-fast',
     resolution: '1920x1080',
+    imageStyle: '',
   },
 };
 

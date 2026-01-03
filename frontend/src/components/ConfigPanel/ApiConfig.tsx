@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Eye, EyeOff, Check, X, RefreshCw, Save } from 'lucide-react';
 import { useApiConfig } from '@/hooks/useApiConfig';
 import toast from 'react-hot-toast';
+import type { ApiConfig as ApiConfigType } from '@/lib/types';
 
 export function ApiConfig() {
   const {
@@ -20,12 +21,14 @@ export function ApiConfig() {
   } = useApiConfig();
 
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
-  const [localConfig, setLocalConfig] = useState(config?.api);
+  const [localConfig, setLocalConfig] = useState<ApiConfigType | null>(null);
 
   // Update local config when config changes
-  if (config?.api && !localConfig) {
-    setLocalConfig(config.api);
-  }
+  useEffect(() => {
+    if (config?.api && !localConfig) {
+      setLocalConfig(config.api);
+    }
+  }, [config?.api, localConfig]);
 
   const toggleShowKey = (key: string) => {
     setShowKeys((prev) => ({ ...prev, [key]: !prev[key] }));
