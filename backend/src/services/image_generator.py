@@ -91,22 +91,27 @@ class WaveSpeedGenerator:
         async def generate_with_semaphore(scene: Scene) -> None:
             nonlocal completed
             async with semaphore:
-                # Pequeno delay aleatório para evitar rate limiting
-                await asyncio.sleep(random.uniform(0.1, 0.5))
+                try:
+                    # Pequeno delay aleatório para evitar rate limiting
+                    await asyncio.sleep(random.uniform(0.1, 0.5))
 
-                result = await self._generate_with_retries(scene)
-                if result:
-                    results[scene.scene_index] = result
-                else:
+                    result = await self._generate_with_retries(scene)
+                    if result:
+                        results[scene.scene_index] = result
+                    else:
+                        failed_scenes.append(scene)
+                except Exception as e:
+                    # Captura qualquer erro não tratado
+                    self._log(f"ERROR: Unexpected error generating scene {scene.scene_index}: {e}")
                     failed_scenes.append(scene)
-
-                completed += 1
-                if progress_callback:
-                    progress_callback(completed, total)
+                finally:
+                    completed += 1
+                    if progress_callback:
+                        progress_callback(completed, total)
 
         # Primeira rodada de geração
         tasks = [generate_with_semaphore(scene) for scene in scenes]
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*tasks, return_exceptions=True)
 
         # Segunda rodada: tentar novamente as que falharam
         if failed_scenes:
