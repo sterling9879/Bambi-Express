@@ -25,15 +25,16 @@ class TransitionType(str, Enum):
 
 
 class MusicMood(str, Enum):
-    UPBEAT = "upbeat"
-    DRAMATIC = "dramatic"
-    CALM = "calm"
-    EMOTIONAL = "emotional"
-    INSPIRING = "inspiring"
-    DARK = "dark"
-    NEUTRAL = "neutral"
-    EPIC = "epic"
-    SUSPENSE = "suspense"
+    ALEGRE = "alegre"
+    ANIMADO = "animado"
+    CALMO = "calmo"
+    DRAMATICO = "dramatico"
+    INSPIRADOR = "inspirador"
+    MELANCOLICO = "melancolico"
+    RAIVA = "raiva"
+    ROMANTICO = "romantico"
+    SOMBRIO = "sombrio"
+    VIBRANTE = "vibrante"
 
 
 class MusicMode(str, Enum):

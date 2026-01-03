@@ -27,15 +27,16 @@ export interface ApiConfig {
 
 // Music Types
 export type MusicMood =
-  | 'upbeat'
-  | 'dramatic'
-  | 'calm'
-  | 'emotional'
-  | 'inspiring'
-  | 'dark'
-  | 'neutral'
-  | 'epic'
-  | 'suspense';
+  | 'alegre'
+  | 'animado'
+  | 'calmo'
+  | 'dramatico'
+  | 'inspirador'
+  | 'melancolico'
+  | 'raiva'
+  | 'romantico'
+  | 'sombrio'
+  | 'vibrante';
 
 export interface MusicTrack {
   id: string;

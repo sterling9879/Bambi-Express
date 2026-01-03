@@ -108,7 +108,7 @@ REGRAS OBRIGATÓRIAS:
 6. Os prompts devem ser em INGLÊS, detalhados, descrevendo a cena visualmente
 7. IMPORTANTE: Cada prompt DEVE terminar com o estilo visual definido acima
 8. Mantenha consistência visual entre todas as cenas (mesmo estilo, paleta de cores, atmosfera)
-9. Classifique o mood emocional de cada cena: upbeat, dramatic, calm, emotional, inspiring, dark, neutral, epic, suspense
+9. Classifique o mood emocional de cada cena usando APENAS estes valores: alegre, animado, calmo, dramatico, inspirador, melancolico, raiva, romantico, sombrio, vibrante
 10. Identifique pontos onde o mood muda significativamente para transição musical
 
 TRANSCRIÇÃO COM TIMESTAMPS:
@@ -125,7 +125,7 @@ RETORNE APENAS JSON VÁLIDO (sem markdown, sem ```):
             "end_ms": 4500,
             "duration_ms": 4500,
             "image_prompt": "cinematic shot of..., detailed description, dramatic lighting, 8k",
-            "mood": "dramatic",
+            "mood": "dramatico",
             "mood_intensity": 0.8,
             "is_mood_transition": false
         }}
@@ -133,12 +133,12 @@ RETORNE APENAS JSON VÁLIDO (sem markdown, sem ```):
     "music_cues": [
         {{
             "timestamp_ms": 0,
-            "mood": "dramatic",
+            "mood": "dramatico",
             "suggestion": "música épica orquestral"
         }},
         {{
             "timestamp_ms": 15000,
-            "mood": "calm",
+            "mood": "calmo",
             "suggestion": "transição para piano suave"
         }}
     ]

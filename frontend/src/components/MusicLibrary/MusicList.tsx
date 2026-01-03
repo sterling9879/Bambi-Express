@@ -8,15 +8,16 @@ import type { MusicMood, MusicTrack } from '@/lib/types';
 
 const MOODS: { value: MusicMood | ''; label: string }[] = [
   { value: '', label: 'Todos' },
-  { value: 'upbeat', label: 'Upbeat' },
-  { value: 'dramatic', label: 'Dramatic' },
-  { value: 'calm', label: 'Calm' },
-  { value: 'emotional', label: 'Emotional' },
-  { value: 'inspiring', label: 'Inspiring' },
-  { value: 'dark', label: 'Dark' },
-  { value: 'neutral', label: 'Neutral' },
-  { value: 'epic', label: 'Epic' },
-  { value: 'suspense', label: 'Suspense' },
+  { value: 'alegre', label: 'Alegre' },
+  { value: 'animado', label: 'Animado' },
+  { value: 'calmo', label: 'Calmo' },
+  { value: 'dramatico', label: 'Dramático' },
+  { value: 'inspirador', label: 'Inspirador' },
+  { value: 'melancolico', label: 'Melancólico' },
+  { value: 'raiva', label: 'Raiva' },
+  { value: 'romantico', label: 'Romântico' },
+  { value: 'sombrio', label: 'Sombrio' },
+  { value: 'vibrante', label: 'Vibrante' },
 ];
 
 function formatDuration(ms: number): string {
