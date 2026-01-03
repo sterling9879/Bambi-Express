@@ -1,6 +1,7 @@
 'use client';
 
-import { Check, Loader2, Clock, XCircle } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, Loader2, Clock, XCircle, Terminal, ChevronDown, ChevronUp } from 'lucide-react';
 import type { Job } from '@/lib/types';
 
 interface ProgressTrackerProps {
@@ -26,12 +27,23 @@ function getStepIndex(status: string): number {
 }
 
 export function ProgressTracker({ job, onCancel }: ProgressTrackerProps) {
+  const [showLogs, setShowLogs] = useState(true);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll logs
+  useEffect(() => {
+    if (showLogs && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [job?.logs, showLogs]);
+
   if (!job) {
     return null;
   }
 
   const currentStepIndex = getStepIndex(job.status);
   const progressPercent = Math.round(job.progress * 100);
+  const logs = job.logs || [];
 
   const getStepStatus = (index: number) => {
     if (job.status === 'completed') return 'completed';
@@ -54,6 +66,19 @@ export function ProgressTracker({ job, onCancel }: ProgressTrackerProps) {
       return `${details.images_completed}/${details.images_total}`;
     }
     return null;
+  };
+
+  const getLogColor = (log: string) => {
+    if (log.includes('ERROR') || log.includes('error') || log.includes('Error') || log.includes('failed') || log.includes('Failed')) {
+      return 'text-red-400';
+    }
+    if (log.includes('WARNING') || log.includes('warning') || log.includes('Warning') || log.includes('retry') || log.includes('Retry')) {
+      return 'text-yellow-400';
+    }
+    if (log.includes('SUCCESS') || log.includes('success') || log.includes('Successfully') || log.includes('completed') || log.includes('Generated')) {
+      return 'text-green-400';
+    }
+    return 'text-gray-300';
   };
 
   return (
@@ -136,10 +161,46 @@ export function ProgressTracker({ job, onCancel }: ProgressTrackerProps) {
           })}
         </div>
 
+        {/* Logs Section */}
+        <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+          <button
+            onClick={() => setShowLogs(!showLogs)}
+            className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          >
+            <div className="flex items-center space-x-2">
+              <Terminal className="w-4 h-4 text-gray-500" />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Logs ({logs.length})
+              </span>
+            </div>
+            {showLogs ? (
+              <ChevronUp className="w-4 h-4 text-gray-500" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-gray-500" />
+            )}
+          </button>
+
+          {showLogs && (
+            <div className="bg-gray-900 p-3 max-h-64 overflow-y-auto font-mono text-xs">
+              {logs.length === 0 ? (
+                <p className="text-gray-500">Aguardando logs...</p>
+              ) : (
+                logs.map((log, index) => (
+                  <div key={index} className={`${getLogColor(log)} py-0.5`}>
+                    {log}
+                  </div>
+                ))
+              )}
+              <div ref={logsEndRef} />
+            </div>
+          )}
+        </div>
+
         {/* Error message */}
         {job.status === 'failed' && job.error && (
           <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-            <p className="text-red-700 dark:text-red-300 text-sm">{job.error}</p>
+            <p className="text-red-700 dark:text-red-300 text-sm font-medium">Erro:</p>
+            <p className="text-red-700 dark:text-red-300 text-sm mt-1">{job.error}</p>
           </div>
         )}
 

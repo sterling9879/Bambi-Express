@@ -189,6 +189,7 @@ export interface Job {
   progress: number;
   currentStep: string;
   details: Record<string, unknown>;
+  logs: string[];
   createdAt: string;
   startedAt?: string;
   completedAt?: string;

@@ -64,7 +64,13 @@ class SceneAnalyzer:
         "required": ["scenes"]
     }
 
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash", image_style: str = ""):
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gemini-2.0-flash",
+        image_style: str = "",
+        log_callback: Optional[callable] = None
+    ):
         genai.configure(api_key=api_key)
         # Configurar modelo com JSON mode para garantir resposta válida
         # Usando snake_case para SDK google-generativeai >= 0.8.0
@@ -79,6 +85,13 @@ class SceneAnalyzer:
         )
         self.image_style = image_style
         self._model_name = model  # Salvar para uso em test_connection
+        self.log_callback = log_callback
+
+    def _log(self, message: str):
+        """Log message to both logger and callback if set."""
+        logger.info(message)
+        if self.log_callback:
+            self.log_callback(message)
 
     # Máximo de duração por chunk em ms (60 segundos)
     MAX_CHUNK_DURATION_MS = 60000
@@ -104,7 +117,7 @@ class SceneAnalyzer:
         # Dividir transcrição em chunks menores
         chunks = self._split_into_chunks(transcription)
 
-        logger.info(f"Transcription split into {len(chunks)} chunks for processing")
+        self._log(f"Transcription split into {len(chunks)} chunks for processing")
 
         all_scenes = []
         all_music_cues = []
@@ -112,7 +125,7 @@ class SceneAnalyzer:
         failed_chunks = []
 
         for i, chunk in enumerate(chunks):
-            logger.info(f"Processing chunk {i+1}/{len(chunks)}")
+            self._log(f"Processing chunk {i+1}/{len(chunks)} with Gemini...")
 
             try:
                 chunk_data = {
@@ -150,7 +163,7 @@ class SceneAnalyzer:
                 all_music_cues.extend(chunk_result.music_cues)
 
             except Exception as e:
-                logger.error(f"Error processing chunk {i+1}/{len(chunks)}: {e}")
+                self._log(f"ERROR: Processing chunk {i+1}/{len(chunks)} failed: {e}")
                 failed_chunks.append(i + 1)
                 # Criar cenas básicas para o chunk que falhou
                 for seg in chunk:
@@ -166,16 +179,17 @@ class SceneAnalyzer:
                         is_mood_transition=False
                     )
                     all_scenes.append(fallback_scene)
+                self._log(f"WARNING: Using fallback scenes for chunk {i+1}")
                 continue
 
         if failed_chunks:
-            logger.warning(f"Chunks that failed: {failed_chunks}. Used fallback scenes.")
+            self._log(f"WARNING: Chunks that failed: {failed_chunks}. Used fallback scenes.")
 
         # Re-indexar cenas
         for idx, scene in enumerate(all_scenes):
             scene.scene_index = idx
 
-        logger.info(f"Total scenes generated: {len(all_scenes)}")
+        self._log(f"Total scenes generated: {len(all_scenes)}")
 
         return SceneAnalysis(
             style_guide=style_guide,
