@@ -184,7 +184,7 @@ export function ApiConfig() {
           title="ElevenLabs"
           apiName="elevenlabs"
           status={
-            credits?.elevenlabs !== undefined && (
+            credits?.elevenlabs != null && (
               <span className="text-sm text-gray-500">
                 Créditos: {credits.elevenlabs.toLocaleString()}
               </span>
@@ -297,7 +297,7 @@ export function ApiConfig() {
           title="WaveSpeed Flux"
           apiName="wavespeed"
           status={
-            credits?.wavespeed !== undefined && (
+            credits?.wavespeed != null && (
               <span className="text-sm text-gray-500">
                 Créditos: ${credits.wavespeed.toFixed(2)}
               </span>
