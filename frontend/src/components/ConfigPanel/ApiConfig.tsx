@@ -206,7 +206,7 @@ export function ApiConfig() {
               >
                 <option value="">Selecionar voz...</option>
                 {voices.map((voice) => (
-                  <option key={voice.voice_id} value={voice.voice_id}>
+                  <option key={voice.voiceId} value={voice.voiceId}>
                     {voice.name}
                   </option>
                 ))}

@@ -227,7 +227,7 @@ export interface CreditsResponse {
 }
 
 export interface Voice {
-  voice_id: string;
+  voiceId: string;
   name: string;
   category?: string;
   labels?: Record<string, string>;
