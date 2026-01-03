@@ -70,7 +70,7 @@ class GeminiConfig(ApiConfigItem):
 
 
 class WaveSpeedConfig(ApiConfigItem):
-    model: str = "flux-schnell"
+    model: str = "flux-dev-ultra-fast"
     resolution: str = "1920x1080"
 
 

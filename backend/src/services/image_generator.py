@@ -31,7 +31,7 @@ class WaveSpeedGenerator:
     def __init__(
         self,
         api_key: str,
-        model: str = "flux-schnell",
+        model: str = "flux-dev-ultra-fast",
         resolution: str = "1920x1080",
         output_dir: str = "temp"
     ):
@@ -88,7 +88,7 @@ class WaveSpeedGenerator:
         async with httpx.AsyncClient(timeout=120) as client:
             # Iniciar geração
             response = await client.post(
-                f"{self.BASE_URL}/wavespeed-ai/flux-schnell/txt2img",
+                f"{self.BASE_URL}/wavespeed-ai/{self.model}/txt2img",
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json"

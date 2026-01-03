@@ -275,6 +275,7 @@ export function ApiConfig() {
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite</option>
                 <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
               </select>
             </div>
@@ -316,8 +317,9 @@ export function ApiConfig() {
                 onChange={(e) => updateField('wavespeed.model', e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
-                <option value="flux-schnell">Flux Schnell (Rápido)</option>
-                <option value="flux-dev">Flux Dev (Qualidade)</option>
+                <option value="flux-dev-ultra-fast">Flux Dev Ultra Fast (Recomendado)</option>
+                <option value="flux-schnell">Flux Schnell</option>
+                <option value="flux-dev">Flux Dev</option>
               </select>
             </div>
             <div>
