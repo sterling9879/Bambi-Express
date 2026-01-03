@@ -4,6 +4,7 @@ Serviço de análise de cenas usando Google Gemini.
 
 import json
 import logging
+import re
 from typing import Optional
 
 import google.generativeai as genai
@@ -144,6 +145,62 @@ RETORNE APENAS JSON VÁLIDO (sem markdown, sem ```):
     ]
 }}"""
 
+    def _repair_json(self, json_str: str) -> str:
+        """Tenta reparar JSON malformado comum do Gemini."""
+        repaired = json_str
+
+        # Remove trailing commas before } or ]
+        repaired = re.sub(r',(\s*[}\]])', r'\1', repaired)
+
+        # Fix unescaped quotes in strings (basic attempt)
+        # This is tricky, but we try to fix obvious cases
+
+        # Fix missing commas between objects/arrays
+        repaired = re.sub(r'}\s*{', '},{', repaired)
+        repaired = re.sub(r']\s*\[', '],[', repaired)
+
+        # Fix missing quotes on keys (common LLM error)
+        repaired = re.sub(r'(\{|\,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', repaired)
+
+        # Remove any control characters except \n, \r, \t
+        repaired = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', repaired)
+
+        return repaired
+
+    def _extract_json_object(self, text: str) -> str:
+        """Extrai o primeiro objeto JSON completo do texto."""
+        # Encontrar o início do JSON
+        start = text.find('{')
+        if start == -1:
+            return text
+
+        # Contar chaves para encontrar o fim
+        depth = 0
+        in_string = False
+        escape_next = False
+
+        for i, char in enumerate(text[start:], start):
+            if escape_next:
+                escape_next = False
+                continue
+            if char == '\\':
+                escape_next = True
+                continue
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if char == '{':
+                depth += 1
+            elif char == '}':
+                depth -= 1
+                if depth == 0:
+                    return text[start:i+1]
+
+        # Se não encontrou o fim, retorna do início até o final
+        return text[start:]
+
     def _parse_response(self, response_text: str) -> SceneAnalysis:
         """Converte resposta do Gemini em SceneAnalysis."""
 
@@ -170,12 +227,43 @@ RETORNE APENAS JSON VÁLIDO (sem markdown, sem ```):
 
         cleaned = cleaned.strip()
 
+        # Extrair apenas o objeto JSON
+        cleaned = self._extract_json_object(cleaned)
+
+        # Tentar fazer parse do JSON
+        data = None
+        parse_errors = []
+
+        # Tentativa 1: JSON direto
         try:
             data = json.loads(cleaned)
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemini response: {e}")
-            logger.error(f"Response text: {response_text[:500]}")
-            raise ValueError(f"Invalid JSON response from Gemini: {e}")
+            parse_errors.append(f"Direct parse: {e}")
+
+            # Tentativa 2: Reparar JSON
+            try:
+                repaired = self._repair_json(cleaned)
+                data = json.loads(repaired)
+                logger.info("JSON was repaired successfully")
+            except json.JSONDecodeError as e2:
+                parse_errors.append(f"After repair: {e2}")
+
+                # Tentativa 3: Truncar até último } válido
+                try:
+                    last_brace = cleaned.rfind('}')
+                    if last_brace > 0:
+                        truncated = cleaned[:last_brace+1]
+                        truncated = self._repair_json(truncated)
+                        data = json.loads(truncated)
+                        logger.warning("JSON was truncated and repaired")
+                except json.JSONDecodeError as e3:
+                    parse_errors.append(f"After truncation: {e3}")
+
+        if data is None:
+            logger.error(f"All JSON parse attempts failed: {parse_errors}")
+            logger.error(f"Response text (first 1000 chars): {response_text[:1000]}")
+            logger.error(f"Response text (last 500 chars): {response_text[-500:]}")
+            raise ValueError(f"Invalid JSON response from Gemini. Errors: {parse_errors}")
 
         scenes = [
             Scene(
