@@ -49,6 +49,7 @@ class WaveSpeedGenerator:
     ) -> List[GeneratedImage]:
         """
         Gera imagens para todas as cenas.
+        Continua mesmo se algumas imagens falharem.
 
         Args:
             scenes: Lista de Scene do scene_analyzer
@@ -56,24 +57,92 @@ class WaveSpeedGenerator:
             progress_callback: Callback (completed, total)
 
         Returns:
-            Lista de GeneratedImage
+            Lista de GeneratedImage (inclui placeholders para falhas)
         """
         semaphore = asyncio.Semaphore(max_concurrent)
         completed = 0
+        failed_scenes = []
 
         async def generate_with_semaphore(scene: Scene) -> GeneratedImage:
             nonlocal completed
             async with semaphore:
-                result = await self._generate_image(scene)
-                completed += 1
-                if progress_callback:
-                    progress_callback(completed, len(scenes))
-                return result
+                try:
+                    result = await self._generate_image(scene)
+                    completed += 1
+                    if progress_callback:
+                        progress_callback(completed, len(scenes))
+                    return result
+                except Exception as e:
+                    logger.error(f"Failed to generate image for scene {scene.scene_index} after all retries: {e}")
+                    failed_scenes.append(scene.scene_index)
+                    completed += 1
+                    if progress_callback:
+                        progress_callback(completed, len(scenes))
+                    # Retornar placeholder para manter a ordem das cenas
+                    return await self._create_placeholder_image(scene)
 
         tasks = [generate_with_semaphore(scene) for scene in scenes]
         results = await asyncio.gather(*tasks)
 
+        if failed_scenes:
+            logger.warning(f"Failed to generate images for scenes: {failed_scenes}. Used placeholders.")
+
         return sorted(results, key=lambda x: x.scene_index)
+
+    async def _create_placeholder_image(self, scene: Scene) -> GeneratedImage:
+        """Cria uma imagem placeholder quando a geração falha."""
+        from PIL import Image, ImageDraw, ImageFont
+
+        # Criar imagem com cor de fundo baseada no mood
+        mood_colors = {
+            "alegre": (255, 223, 128),
+            "animado": (255, 165, 79),
+            "calmo": (135, 206, 235),
+            "dramatico": (70, 70, 100),
+            "inspirador": (255, 215, 0),
+            "melancolico": (105, 105, 135),
+            "raiva": (178, 34, 34),
+            "romantico": (255, 182, 193),
+            "sombrio": (47, 47, 61),
+            "vibrante": (255, 99, 71),
+        }
+
+        bg_color = mood_colors.get(scene.mood, (100, 100, 100))
+        img = Image.new('RGB', (self.width, self.height), bg_color)
+        draw = ImageDraw.Draw(img)
+
+        # Adicionar texto indicando que é placeholder
+        text = f"Cena {scene.scene_index + 1}"
+
+        # Tentar usar uma fonte, se falhar usa default
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 48)
+        except:
+            font = ImageFont.load_default()
+
+        # Centralizar texto
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        x = (self.width - text_width) // 2
+        y = (self.height - text_height) // 2
+
+        # Cor do texto (contraste com fundo)
+        text_color = (255, 255, 255) if sum(bg_color) < 400 else (0, 0, 0)
+        draw.text((x, y), text, fill=text_color, font=font)
+
+        # Salvar
+        output_path = self.output_dir / f"scene_{scene.scene_index}.png"
+        img.save(output_path)
+
+        logger.info(f"Created placeholder image for scene {scene.scene_index}")
+
+        return GeneratedImage(
+            scene_index=scene.scene_index,
+            image_path=str(output_path),
+            prompt_used=f"[PLACEHOLDER] {scene.image_prompt[:100]}...",
+            generation_time_ms=0
+        )
 
     @retry(
         stop=stop_after_attempt(3),
