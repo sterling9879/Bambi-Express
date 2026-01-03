@@ -54,13 +54,28 @@ class VideoComposer:
         """
         output_path = self.output_dir / output_filename
 
-        logger.info(f"Composing video with {len(scenes)} scenes")
+        logger.info(f"Composing video with {len(scenes)} scenes and {len(images)} images")
 
         # Calcular durações
         durations = self._calculate_durations(scenes)
 
         # Sort images by scene_index to match scenes
         sorted_images = sorted(images, key=lambda x: x.scene_index)
+
+        # Verificar alinhamento entre cenas e imagens
+        if len(scenes) != len(sorted_images):
+            logger.warning(f"Mismatch: {len(scenes)} scenes but {len(sorted_images)} images")
+
+        # Log para debug de sincronização
+        total_duration = sum(durations)
+        logger.info(f"Total video duration: {total_duration:.2f}s")
+        for i, (scene, img, dur) in enumerate(zip(scenes[:5], sorted_images[:5], durations[:5])):
+            logger.debug(
+                f"Scene {i}: text='{scene.text[:30]}...' | "
+                f"time={scene.start_ms}-{scene.end_ms}ms | "
+                f"duration={dur:.2f}s | "
+                f"image={img.scene_index}"
+            )
 
         # Construir comando FFMPEG
         cmd = self._build_ffmpeg_command(
@@ -140,7 +155,7 @@ class VideoComposer:
         filter_parts = []
 
         # Add image inputs with loop for duration
-        for i, (img, duration) in enumerate(zip(images, durations)):
+        for i, (img, duration) in enumerate(zip(sorted_images, durations)):
             inputs.extend([
                 "-loop", "1",
                 "-t", str(duration),

@@ -242,7 +242,7 @@ class SceneAnalyzer:
         if image_style:
             style_instruction = f"""
 ESTILO VISUAL OBRIGATÓRIO:
-Todos os prompts de imagem DEVEM incluir este estilo no final: "{image_style}"
+Todos os prompts de imagem DEVEM terminar com este estilo: "{image_style}"
 """
 
         chunk_info = ""
@@ -253,37 +253,58 @@ Este é o chunk {transcription_data['chunk_index'] + 1} de {transcription_data['
 Processe APENAS os segmentos fornecidos abaixo.
 """
 
-        return f"""Você é um diretor de arte criando um vídeo.
+        return f"""Você é um diretor de arte criativo criando um vídeo narrado.
 
-Receba esta transcrição com timestamps e divida em cenas visuais.
+Sua tarefa é analisar a transcrição e criar cenas visuais que ILUSTREM VISUALMENTE o conteúdo falado.
 {style_instruction}{chunk_info}
-REGRAS OBRIGATÓRIAS:
-1. Cada cena deve ter entre {min_duration} e {max_duration} segundos
-2. NUNCA corte no meio de uma frase ou ideia
-3. Use os timestamps das palavras para definir início/fim precisos
-4. Ajuste os timestamps para coincidir com pausas naturais na fala
-5. Gere um prompt de imagem cinematográfico para cada cena
-6. Os prompts devem ser em INGLÊS, detalhados, descrevendo a cena visualmente
-7. IMPORTANTE: Cada prompt DEVE terminar com o estilo visual definido acima
-8. Mantenha consistência visual entre todas as cenas (mesmo estilo, paleta de cores, atmosfera)
-9. Classifique o mood emocional de cada cena usando APENAS estes valores: alegre, animado, calmo, dramatico, inspirador, melancolico, raiva, romantico, sombrio, vibrante
-10. Identifique pontos onde o mood muda significativamente para transição musical
+=== REGRAS CRÍTICAS ===
 
-TRANSCRIÇÃO COM TIMESTAMPS:
+1. CADA CENA DEVE ILUSTRAR VISUALMENTE O QUE ESTÁ SENDO FALADO:
+   - Se o narrador fala sobre "o sol nascendo", a imagem deve mostrar um nascer do sol
+   - Se fala sobre "uma cidade movimentada", mostre uma cidade com movimento
+   - Se fala sobre "sentimentos de tristeza", mostre uma cena que evoque melancolia
+   - NUNCA crie imagens genéricas que não se relacionam com o texto
+
+2. TIMING E DURAÇÃO:
+   - Cada cena deve ter entre {min_duration} e {max_duration} segundos
+   - Use EXATAMENTE os timestamps das palavras (start_ms e end_ms)
+   - O start_ms da cena deve ser o start_ms da primeira palavra da cena
+   - O end_ms da cena deve ser o end_ms da última palavra da cena
+   - NUNCA corte no meio de uma frase - termine sempre em pausas naturais
+
+3. PROMPTS DE IMAGEM CINEMATOGRÁFICOS:
+   - Escreva em INGLÊS
+   - Seja ESPECÍFICO e DETALHADO (mínimo 30 palavras por prompt)
+   - Inclua: composição, iluminação, atmosfera, cores, ângulo de câmera
+   - Descreva elementos concretos, não abstratos
+   - Mantenha consistência visual entre cenas (mesmo estilo, paleta de cores)
+
+4. EXEMPLO DE BOM PROMPT:
+   Texto: "A tecnologia está mudando a forma como trabalhamos"
+   BOM: "Modern open office space with diverse professionals working on sleek computers, holographic displays floating above desks, warm ambient lighting mixed with blue tech glow, wide angle shot, cinematic composition, 8k, photorealistic"
+   RUIM: "Abstract visualization of technology" (muito genérico!)
+
+5. EXEMPLO DE ALINHAMENTO:
+   Se o texto diz "Imagine um oceano calmo ao pôr do sol", a imagem DEVE mostrar um oceano ao pôr do sol, não uma cena aleatória.
+
+=== CLASSIFICAÇÃO DE MOOD ===
+Use APENAS: alegre, animado, calmo, dramatico, inspirador, melancolico, raiva, romantico, sombrio, vibrante
+
+=== TRANSCRIÇÃO COM TIMESTAMPS ===
 {json.dumps(transcription_data["segments"], ensure_ascii=False, indent=2)}
 
-RETORNE APENAS JSON VÁLIDO (sem markdown, sem ```):
+=== FORMATO DE RESPOSTA (JSON) ===
 {{
-    "style_guide": "descrição do estilo visual geral a manter consistência",
+    "style_guide": "descrição detalhada do estilo visual a manter em todas as cenas",
     "scenes": [
         {{
             "scene_index": 0,
-            "text": "texto falado nesta cena",
+            "text": "texto exato falado nesta cena",
             "start_ms": 0,
             "end_ms": 4500,
             "duration_ms": 4500,
-            "image_prompt": "cinematic shot of..., detailed description, dramatic lighting, 8k",
-            "mood": "dramatico",
+            "image_prompt": "Detailed cinematic description that DIRECTLY illustrates what is being said..., {image_style if image_style else '8k, cinematic'}",
+            "mood": "inspirador",
             "mood_intensity": 0.8,
             "is_mood_transition": false
         }}
@@ -291,13 +312,8 @@ RETORNE APENAS JSON VÁLIDO (sem markdown, sem ```):
     "music_cues": [
         {{
             "timestamp_ms": 0,
-            "mood": "dramatico",
+            "mood": "inspirador",
             "suggestion": "música épica orquestral"
-        }},
-        {{
-            "timestamp_ms": 15000,
-            "mood": "calmo",
-            "suggestion": "transição para piano suave"
         }}
     ]
 }}"""
