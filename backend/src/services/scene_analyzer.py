@@ -145,15 +145,61 @@ RETORNE APENAS JSON VÁLIDO (sem markdown, sem ```):
     ]
 }}"""
 
+    def _fix_unescaped_quotes_in_strings(self, json_str: str) -> str:
+        """
+        Tenta corrigir aspas não escapadas dentro de strings JSON.
+        Esta é uma operação complexa que processa caractere por caractere.
+        """
+        result = []
+        i = 0
+        in_string = False
+        string_start = -1
+
+        while i < len(json_str):
+            char = json_str[i]
+
+            if char == '\\' and i + 1 < len(json_str):
+                # Caractere de escape - adiciona os dois caracteres
+                result.append(char)
+                result.append(json_str[i + 1])
+                i += 2
+                continue
+
+            if char == '"':
+                if not in_string:
+                    # Início de uma string
+                    in_string = True
+                    string_start = i
+                    result.append(char)
+                else:
+                    # Pode ser fim da string ou aspas não escapadas
+                    # Verifica se o próximo caractere indica fim de string
+                    next_chars = json_str[i+1:i+20].lstrip()
+                    if next_chars and next_chars[0] in ':,}]\n':
+                        # Provavelmente é o fim da string
+                        in_string = False
+                        result.append(char)
+                    elif next_chars and next_chars[0] == '"':
+                        # Próximo é outra aspas, provavelmente fim desta + início de outra
+                        in_string = False
+                        result.append(char)
+                    else:
+                        # Aspas no meio da string - escapar
+                        result.append('\\')
+                        result.append(char)
+                i += 1
+            else:
+                result.append(char)
+                i += 1
+
+        return ''.join(result)
+
     def _repair_json(self, json_str: str) -> str:
         """Tenta reparar JSON malformado comum do Gemini."""
         repaired = json_str
 
         # Remove trailing commas before } or ]
         repaired = re.sub(r',(\s*[}\]])', r'\1', repaired)
-
-        # Fix unescaped quotes in strings (basic attempt)
-        # This is tricky, but we try to fix obvious cases
 
         # Fix missing commas between objects/arrays
         repaired = re.sub(r'}\s*{', '},{', repaired)
@@ -164,6 +210,10 @@ RETORNE APENAS JSON VÁLIDO (sem markdown, sem ```):
 
         # Remove any control characters except \n, \r, \t
         repaired = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', repaired)
+
+        # Replace newlines inside strings with spaces (common issue)
+        # This is a simplified approach - replace \n that are not after a comma or brace
+        repaired = re.sub(r'(?<=[a-zA-Z,.])\n(?=[a-zA-Z])', ' ', repaired)
 
         return repaired
 
@@ -240,24 +290,33 @@ RETORNE APENAS JSON VÁLIDO (sem markdown, sem ```):
         except json.JSONDecodeError as e:
             parse_errors.append(f"Direct parse: {e}")
 
-            # Tentativa 2: Reparar JSON
+            # Tentativa 2: Reparar JSON básico
             try:
                 repaired = self._repair_json(cleaned)
                 data = json.loads(repaired)
-                logger.info("JSON was repaired successfully")
+                logger.info("JSON was repaired successfully (basic)")
             except json.JSONDecodeError as e2:
-                parse_errors.append(f"After repair: {e2}")
+                parse_errors.append(f"After basic repair: {e2}")
 
-                # Tentativa 3: Truncar até último } válido
+                # Tentativa 3: Corrigir aspas não escapadas
                 try:
-                    last_brace = cleaned.rfind('}')
-                    if last_brace > 0:
-                        truncated = cleaned[:last_brace+1]
-                        truncated = self._repair_json(truncated)
-                        data = json.loads(truncated)
-                        logger.warning("JSON was truncated and repaired")
+                    quote_fixed = self._fix_unescaped_quotes_in_strings(cleaned)
+                    quote_fixed = self._repair_json(quote_fixed)
+                    data = json.loads(quote_fixed)
+                    logger.info("JSON was repaired successfully (quote fix)")
                 except json.JSONDecodeError as e3:
-                    parse_errors.append(f"After truncation: {e3}")
+                    parse_errors.append(f"After quote fix: {e3}")
+
+                    # Tentativa 4: Truncar até último } válido
+                    try:
+                        last_brace = cleaned.rfind('}')
+                        if last_brace > 0:
+                            truncated = cleaned[:last_brace+1]
+                            truncated = self._repair_json(truncated)
+                            data = json.loads(truncated)
+                            logger.warning("JSON was truncated and repaired")
+                    except json.JSONDecodeError as e4:
+                        parse_errors.append(f"After truncation: {e4}")
 
         if data is None:
             logger.error(f"All JSON parse attempts failed: {parse_errors}")
