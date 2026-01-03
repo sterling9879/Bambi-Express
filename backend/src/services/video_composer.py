@@ -197,26 +197,39 @@ class VideoComposer:
             filter_parts.append(filter_str)
             processed_streams.append(f"[{stream_name}]")
 
-        # Build xfade transitions between streams
+        # Build transitions between streams
         if len(processed_streams) > 1:
+            transition_type = cfg.transition.type.value
             transition_duration = cfg.transition.duration
-            current_stream = processed_streams[0]
-            accumulated_offset = 0
 
-            for i in range(1, len(processed_streams)):
-                transition_type = self._get_transition_type(i - 1)
-                offset = accumulated_offset + durations[i - 1] - transition_duration
-
-                next_stream_name = f"x{i}"
+            # If transition is "none", use concat instead of xfade
+            if transition_type == "none":
+                # Simple concat - no crossfade
+                concat_inputs = "".join(processed_streams)
                 filter_parts.append(
-                    f"{current_stream}{processed_streams[i]}xfade="
-                    f"transition={transition_type}:duration={transition_duration}:"
-                    f"offset={offset:.3f}[{next_stream_name}]"
+                    f"{concat_inputs}concat=n={len(processed_streams)}:v=1:a=0[vconcat]"
                 )
-                current_stream = f"[{next_stream_name}]"
-                accumulated_offset = offset
+                final_video = "[vconcat]"
+            else:
+                # Use xfade for transitions
+                current_stream = processed_streams[0]
+                accumulated_offset = 0
 
-            final_video = current_stream
+                for i in range(1, len(processed_streams)):
+                    trans = self._get_transition_type(i - 1)
+                    # Ensure offset doesn't go negative
+                    offset = max(0, accumulated_offset + durations[i - 1] - transition_duration)
+
+                    next_stream_name = f"x{i}"
+                    filter_parts.append(
+                        f"{current_stream}{processed_streams[i]}xfade="
+                        f"transition={trans}:duration={transition_duration}:"
+                        f"offset={offset:.3f}[{next_stream_name}]"
+                    )
+                    current_stream = f"[{next_stream_name}]"
+                    accumulated_offset = offset
+
+                final_video = current_stream
         else:
             final_video = processed_streams[0]
 
@@ -273,12 +286,15 @@ class VideoComposer:
         return cmd
 
     def _get_transition_type(self, index: int) -> str:
-        """Retorna tipo de transição para o índice."""
+        """Retorna tipo de transição para o índice (nunca 'none' para xfade)."""
         if not self.config.transition.vary:
-            return self.config.transition.type.value
+            trans = self.config.transition.type.value
+            # 'none' is not valid for xfade, use 'fade' as fallback
+            return "fade" if trans == "none" else trans
 
         allowed = self.config.transition.allowed_types or [self.config.transition.type]
-        return allowed[index % len(allowed)].value
+        trans = allowed[index % len(allowed)].value
+        return "fade" if trans == "none" else trans
 
     def _get_ken_burns_direction(self, index: int) -> str:
         """Retorna direção do Ken Burns."""
