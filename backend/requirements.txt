@@ -1,0 +1,47 @@
+# FastAPI and server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# HTTP client
+httpx>=0.25.0
+
+# Environment and configuration
+python-dotenv>=1.0.0
+
+# Audio processing
+pydub>=0.25.1
+
+# AI/ML
+google-generativeai>=0.3.0
+
+# Image processing
+Pillow>=10.0.0
+
+# Progress and retries
+tqdm>=4.66.0
+tenacity>=8.2.0
+
+# Async file operations
+aiofiles>=23.0.0
+
+# Task queue (optional, for production)
+# celery>=5.3.0
+# redis>=5.0.0
+
+# Database (optional)
+# sqlalchemy>=2.0.0
+# alembic>=1.12.0
+
+# Data validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Security (for API key encryption)
+cryptography>=41.0.0
+
+# Development
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+black>=23.0.0
+isort>=5.12.0

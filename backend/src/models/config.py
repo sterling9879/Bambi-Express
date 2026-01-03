@@ -1,0 +1,184 @@
+"""
+Modelos de configuração do sistema.
+"""
+
+from pydantic import BaseModel, Field
+from typing import Optional, List
+from enum import Enum
+
+
+# ============== ENUMS ==============
+
+
+class TransitionType(str, Enum):
+    FADE = "fade"
+    WIPELEFT = "wipeleft"
+    WIPERIGHT = "wiperight"
+    SLIDEUP = "slideup"
+    SLIDEDOWN = "slidedown"
+    CIRCLEOPEN = "circleopen"
+    CIRCLECLOSE = "circleclose"
+    DISSOLVE = "dissolve"
+    PIXELIZE = "pixelize"
+    RADIAL = "radial"
+    NONE = "none"
+
+
+class MusicMood(str, Enum):
+    UPBEAT = "upbeat"
+    DRAMATIC = "dramatic"
+    CALM = "calm"
+    EMOTIONAL = "emotional"
+    INSPIRING = "inspiring"
+    DARK = "dark"
+    NEUTRAL = "neutral"
+    EPIC = "epic"
+    SUSPENSE = "suspense"
+
+
+class MusicMode(str, Enum):
+    NONE = "none"
+    LIBRARY = "library"
+    AI_GENERATED = "ai_generated"
+
+
+class SceneDurationMode(str, Enum):
+    AUTO = "auto"
+    FIXED = "fixed"
+    RANGE = "range"
+
+
+# ============== API CONFIGS ==============
+
+
+class ApiConfigItem(BaseModel):
+    api_key: str = ""
+    enabled: bool = True
+
+
+class ElevenLabsConfig(ApiConfigItem):
+    voice_id: str = ""
+    model_id: str = "eleven_multilingual_v2"
+
+
+class AssemblyAIConfig(ApiConfigItem):
+    language_code: str = "pt"
+
+
+class GeminiConfig(ApiConfigItem):
+    model: str = "gemini-2.0-flash"
+
+
+class WaveSpeedConfig(ApiConfigItem):
+    model: str = "flux-schnell"
+    resolution: str = "1920x1080"
+
+
+class SunoConfig(ApiConfigItem):
+    pass
+
+
+class ApiConfig(BaseModel):
+    elevenlabs: ElevenLabsConfig = ElevenLabsConfig()
+    assemblyai: AssemblyAIConfig = AssemblyAIConfig()
+    gemini: GeminiConfig = GeminiConfig()
+    wavespeed: WaveSpeedConfig = WaveSpeedConfig()
+    suno: Optional[SunoConfig] = None
+
+
+# ============== FFMPEG CONFIGS ==============
+
+
+class Resolution(BaseModel):
+    width: int = 1920
+    height: int = 1080
+    preset: Optional[str] = "1080p_landscape"
+
+
+class SceneDurationConfig(BaseModel):
+    mode: SceneDurationMode = SceneDurationMode.AUTO
+    fixed_duration: Optional[float] = 4.0
+    min_duration: Optional[float] = 3.0
+    max_duration: Optional[float] = 6.0
+
+
+class TransitionConfig(BaseModel):
+    type: TransitionType = TransitionType.FADE
+    duration: float = Field(default=0.5, ge=0.1, le=2.0)
+    vary: bool = False
+    allowed_types: Optional[List[TransitionType]] = None
+
+
+class KenBurnsConfig(BaseModel):
+    enabled: bool = True
+    intensity: float = Field(default=0.05, ge=0, le=0.2)
+    direction: str = "alternate"
+
+
+class VignetteConfig(BaseModel):
+    enabled: bool = False
+    intensity: float = Field(default=0.3, ge=0, le=1)
+
+
+class GrainConfig(BaseModel):
+    enabled: bool = False
+    intensity: float = Field(default=0.1, ge=0, le=0.5)
+
+
+class EffectsConfig(BaseModel):
+    ken_burns: KenBurnsConfig = KenBurnsConfig()
+    vignette: VignetteConfig = VignetteConfig()
+    grain: GrainConfig = GrainConfig()
+
+
+class AudioConfig(BaseModel):
+    codec: str = "aac"
+    bitrate: int = 192
+    narration_volume: float = Field(default=1.0, ge=0, le=2)
+    normalize: bool = True
+    target_lufs: int = -14
+
+
+class FFmpegConfig(BaseModel):
+    resolution: Resolution = Resolution()
+    fps: int = 30
+    crf: int = Field(default=23, ge=18, le=28)
+    preset: str = "medium"
+    scene_duration: SceneDurationConfig = SceneDurationConfig()
+    transition: TransitionConfig = TransitionConfig()
+    effects: EffectsConfig = EffectsConfig()
+    audio: AudioConfig = AudioConfig()
+
+
+# ============== MUSIC CONFIGS ==============
+
+
+class AIMusicConfig(BaseModel):
+    style_prompt: str = ""
+    preset: Optional[str] = None
+    generate_variations: bool = False
+    variations_count: int = 3
+    instrumental_only: bool = True
+
+
+class MusicConfig(BaseModel):
+    mode: MusicMode = MusicMode.NONE
+    volume: float = Field(default=0.15, ge=0, le=1)
+    ducking_enabled: bool = True
+    ducking_intensity: float = Field(default=0.7, ge=0, le=1)
+    fade_in_ms: int = 1000
+    fade_out_ms: int = 2000
+    crossfade_ms: int = 1500
+    auto_select_by_mood: bool = True
+    manual_track_id: Optional[str] = None
+    secondary_track_id: Optional[str] = None
+    ai_config: Optional[AIMusicConfig] = None
+
+
+# ============== FULL CONFIG ==============
+
+
+class FullConfig(BaseModel):
+    api: ApiConfig = ApiConfig()
+    music: MusicConfig = MusicConfig()
+    ffmpeg: FFmpegConfig = FFmpegConfig()
