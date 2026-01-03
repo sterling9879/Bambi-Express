@@ -155,7 +155,8 @@ async def _run_video_generation(
                 "current_step": status.current_step,
                 "updated_at": status.updated_at.isoformat(),
                 "error": status.error,
-                "details": status.details
+                "details": status.details,
+                "logs": status.logs
             })
 
     try:
