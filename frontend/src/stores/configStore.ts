@@ -145,7 +145,15 @@ export const useConfigStore = create<ConfigState>()(
     }),
     {
       name: 'video-generator-config',
+      version: 2,
       partialize: (state) => ({ config: state.config }),
+      migrate: (persistedState, version) => {
+        // Clear old data and start fresh
+        if (version < 2) {
+          return { config: null, isLoading: false, error: null };
+        }
+        return persistedState as ConfigState;
+      },
     }
   )
 );

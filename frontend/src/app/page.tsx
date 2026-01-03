@@ -10,6 +10,7 @@ import { MusicList } from '@/components/MusicLibrary/MusicList';
 import { TextEditor } from '@/components/Editor/TextEditor';
 import { ProgressTracker } from '@/components/JobStatus/ProgressTracker';
 import { useVideoGeneration } from '@/hooks/useVideoGeneration';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 type Tab = 'editor' | 'config' | 'music';
 
@@ -187,9 +188,11 @@ export default function Home() {
               </nav>
             </div>
             <div className="lg:col-span-3">
-              {configSection === 'api' && <ApiConfig />}
-              {configSection === 'music' && <MusicConfig />}
-              {configSection === 'ffmpeg' && <FFmpegConfig />}
+              <ErrorBoundary>
+                {configSection === 'api' && <ApiConfig />}
+                {configSection === 'music' && <MusicConfig />}
+                {configSection === 'ffmpeg' && <FFmpegConfig />}
+              </ErrorBoundary>
             </div>
           </div>
         )}
