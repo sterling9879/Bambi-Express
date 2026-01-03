@@ -67,14 +67,14 @@ class SceneAnalyzer:
     def __init__(self, api_key: str, model: str = "gemini-2.0-flash", image_style: str = ""):
         genai.configure(api_key=api_key)
         # Configurar modelo com JSON mode para garantir resposta válida
-        # Usando camelCase para SDK antigo (google-generativeai)
+        # Usando snake_case para SDK google-generativeai >= 0.8.0
         self.model = genai.GenerativeModel(
             model,
-            generation_config={
-                "responseMimeType": "application/json",
-                "responseSchema": self.RESPONSE_SCHEMA,
-                "temperature": 0.7,
-            }
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                response_schema=self.RESPONSE_SCHEMA,
+                temperature=0.7,
+            )
         )
         self.image_style = image_style
 

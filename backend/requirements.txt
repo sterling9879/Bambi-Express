@@ -13,7 +13,7 @@ python-dotenv>=1.0.0
 pydub>=0.25.1
 
 # AI/ML
-google-generativeai>=0.3.0
+google-generativeai>=0.8.0
 
 # Image processing
 Pillow>=10.0.0
