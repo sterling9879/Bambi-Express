@@ -34,6 +34,8 @@ export function useVideoGeneration(
 
   const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const jobIdRef = useRef<string | null>(null);
+  const pollErrorCountRef = useRef<number>(0);
+  const MAX_POLL_ERRORS = 5;
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -50,6 +52,7 @@ export function useVideoGeneration(
     try {
       const status = await jobsApi.getStatus(jobIdRef.current);
       setCurrentJob(status);
+      pollErrorCountRef.current = 0; // Reset error count on success
 
       if (status.status === 'completed') {
         const jobResult = await jobsApi.getResult(jobIdRef.current);
@@ -66,10 +69,21 @@ export function useVideoGeneration(
         pollTimeoutRef.current = setTimeout(pollJobStatus, pollInterval);
       }
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to get job status';
-      setError(errorMsg);
-      setIsGenerating(false);
-      onError?.(errorMsg);
+      // Increment error count and retry if under threshold
+      pollErrorCountRef.current += 1;
+      console.warn(`Poll error ${pollErrorCountRef.current}/${MAX_POLL_ERRORS}:`, err);
+
+      if (pollErrorCountRef.current < MAX_POLL_ERRORS) {
+        // Retry with exponential backoff
+        const backoffDelay = Math.min(pollInterval * Math.pow(2, pollErrorCountRef.current), 10000);
+        pollTimeoutRef.current = setTimeout(pollJobStatus, backoffDelay);
+      } else {
+        // Too many errors, stop polling
+        const errorMsg = err instanceof Error ? err.message : 'Failed to get job status';
+        setError(errorMsg);
+        setIsGenerating(false);
+        onError?.(errorMsg);
+      }
     }
   }, [pollInterval, onComplete, onError]);
 
@@ -84,6 +98,7 @@ export function useVideoGeneration(
       setIsGenerating(true);
       setError(null);
       setResult(null);
+      pollErrorCountRef.current = 0; // Reset error count
 
       try {
         const response = await videoApi.generate(text, title, channelId);
