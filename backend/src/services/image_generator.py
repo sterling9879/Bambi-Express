@@ -90,16 +90,22 @@ class WaveSpeedGenerator:
             async with httpx.AsyncClient(timeout=120) as client:
                 # Iniciar geração
                 response = await client.post(
-                    f"{self.BASE_URL}/wavespeed-ai/{self.model}/txt2img",
+                    f"{self.BASE_URL}/wavespeed-ai/{self.model}",
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json"
                     },
                     json={
                         "prompt": scene.image_prompt,
-                        "width": self.width,
-                        "height": self.height,
-                        "num_images": 1
+                        "size": f"{self.width}*{self.height}",
+                        "num_images": 1,
+                        "enable_base64_output": False,
+                        "enable_sync_mode": False,
+                        "guidance_scale": 3.5,
+                        "num_inference_steps": 28,
+                        "output_format": "png",
+                        "seed": -1,
+                        "strength": 0.8
                     }
                 )
 
