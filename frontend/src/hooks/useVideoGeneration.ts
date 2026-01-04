@@ -35,7 +35,9 @@ export function useVideoGeneration(
   const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const jobIdRef = useRef<string | null>(null);
   const pollErrorCountRef = useRef<number>(0);
-  const MAX_POLL_ERRORS = 5;
+  const consecutiveErrorsRef = useRef<number>(0);
+  const MAX_POLL_ERRORS = 30; // Aumentado para operações longas
+  const MAX_CONSECUTIVE_ERRORS = 10; // Erros seguidos sem sucesso
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -52,7 +54,8 @@ export function useVideoGeneration(
     try {
       const status = await jobsApi.getStatus(jobIdRef.current);
       setCurrentJob(status);
-      pollErrorCountRef.current = 0; // Reset error count on success
+      // Reset counters on success
+      consecutiveErrorsRef.current = 0;
 
       if (status.status === 'completed') {
         const jobResult = await jobsApi.getResult(jobIdRef.current);
@@ -69,17 +72,33 @@ export function useVideoGeneration(
         pollTimeoutRef.current = setTimeout(pollJobStatus, pollInterval);
       }
     } catch (err) {
-      // Increment error count and retry if under threshold
+      // Increment error counts
       pollErrorCountRef.current += 1;
-      console.warn(`Poll error ${pollErrorCountRef.current}/${MAX_POLL_ERRORS}:`, err);
+      consecutiveErrorsRef.current += 1;
 
-      if (pollErrorCountRef.current < MAX_POLL_ERRORS) {
-        // Retry with exponential backoff
-        const backoffDelay = Math.min(pollInterval * Math.pow(2, pollErrorCountRef.current), 10000);
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      const isTimeout = errorMsg.includes('ocupado') || errorMsg.includes('timeout');
+
+      console.warn(
+        `Poll error ${consecutiveErrorsRef.current}/${MAX_CONSECUTIVE_ERRORS} ` +
+        `(total: ${pollErrorCountRef.current}/${MAX_POLL_ERRORS}): ${errorMsg}`
+      );
+
+      // Timeout não é erro fatal - backend ainda está trabalhando
+      if (isTimeout && consecutiveErrorsRef.current < MAX_CONSECUTIVE_ERRORS) {
+        // Retry com delay maior para timeout
+        const backoffDelay = Math.min(5000 * consecutiveErrorsRef.current, 30000);
+        console.log(`Retrying in ${backoffDelay}ms (server busy)...`);
+        pollTimeoutRef.current = setTimeout(pollJobStatus, backoffDelay);
+        return;
+      }
+
+      // Para erros não-timeout, usar lógica normal
+      if (pollErrorCountRef.current < MAX_POLL_ERRORS && consecutiveErrorsRef.current < MAX_CONSECUTIVE_ERRORS) {
+        const backoffDelay = Math.min(pollInterval * Math.pow(2, consecutiveErrorsRef.current), 15000);
         pollTimeoutRef.current = setTimeout(pollJobStatus, backoffDelay);
       } else {
         // Too many errors, stop polling
-        const errorMsg = err instanceof Error ? err.message : 'Failed to get job status';
         setError(errorMsg);
         setIsGenerating(false);
         onError?.(errorMsg);
@@ -98,7 +117,8 @@ export function useVideoGeneration(
       setIsGenerating(true);
       setError(null);
       setResult(null);
-      pollErrorCountRef.current = 0; // Reset error count
+      pollErrorCountRef.current = 0;
+      consecutiveErrorsRef.current = 0;
 
       try {
         const response = await videoApi.generate(text, title, channelId);

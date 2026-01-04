@@ -57,16 +57,16 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30000, // 30 segundos timeout
+  timeout: 120000, // 2 minutos timeout (backend pode estar ocupado gerando)
 });
 
 // Interceptor para tratar erros de forma consistente
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Timeout
+    // Timeout - não é erro crítico durante geração
     if (error.code === 'ECONNABORTED') {
-      const customError = new Error('Servidor demorou muito para responder. Tente novamente.');
+      const customError = new Error('Servidor ocupado processando. A geração continua em segundo plano.');
       return Promise.reject(customError);
     }
 
