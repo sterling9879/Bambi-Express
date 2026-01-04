@@ -185,19 +185,9 @@ class SceneAnalyzer:
         if failed_chunks:
             self._log(f"WARNING: Chunks that failed: {failed_chunks}. Used fallback scenes.")
 
-        # IMPORTANTE: Ordenar cenas por start_ms para garantir ordem cronológica
-        all_scenes.sort(key=lambda s: s.start_ms)
-
-        # Re-indexar cenas após ordenação
+        # Re-indexar cenas na ordem que vieram (Gemini já retorna em ordem cronológica)
         for idx, scene in enumerate(all_scenes):
             scene.scene_index = idx
-
-        # Log para debug de durações
-        durations = [s.duration_ms / 1000 for s in all_scenes]
-        avg_duration = sum(durations) / len(durations) if durations else 0
-        min_duration = min(durations) if durations else 0
-        max_duration = max(durations) if durations else 0
-        self._log(f"Scene durations - avg: {avg_duration:.2f}s, min: {min_duration:.2f}s, max: {max_duration:.2f}s")
 
         self._log(f"Total scenes generated: {len(all_scenes)}")
 
@@ -509,24 +499,20 @@ Use APENAS: alegre, animado, calmo, dramatico, inspirador, melancolico, raiva, r
 
         scenes = []
         for s in data["scenes"]:
-            # IMPORTANTE: Calcular duration_ms a partir dos timestamps reais
-            # Não confiar no duration_ms do Gemini
-            start_ms = s["start_ms"]
-            end_ms = s["end_ms"]
-            actual_duration_ms = end_ms - start_ms
+            # Usar os valores do Gemini diretamente
+            # O Gemini define a estrutura das cenas baseado no conteúdo
+            duration_ms = s.get("duration_ms", s["end_ms"] - s["start_ms"])
 
-            # Validar duração mínima (100ms)
-            if actual_duration_ms < 100:
-                logger.warning(f"Scene with very short duration: {actual_duration_ms}ms, adjusting to 1000ms")
-                actual_duration_ms = 1000
-                end_ms = start_ms + actual_duration_ms
+            # Garantir duração mínima de 1 segundo
+            if duration_ms < 1000:
+                duration_ms = 1000
 
             scenes.append(Scene(
                 scene_index=s["scene_index"],
                 text=s["text"],
-                start_ms=start_ms,
-                end_ms=end_ms,
-                duration_ms=actual_duration_ms,  # Usar duração calculada, não do Gemini
+                start_ms=s["start_ms"],
+                end_ms=s["end_ms"],
+                duration_ms=duration_ms,
                 image_prompt=s["image_prompt"],
                 mood=s["mood"],
                 mood_intensity=s.get("mood_intensity", 0.5),

@@ -66,25 +66,8 @@ class VideoComposer:
         if len(scenes) != len(sorted_images):
             logger.warning(f"Mismatch: {len(scenes)} scenes but {len(sorted_images)} images")
 
-        # Log para debug de sincronização
         total_duration = sum(durations)
         logger.info(f"Total video duration: {total_duration:.2f}s")
-
-        # Verificar distribuição de durações
-        short_scenes = [d for d in durations if d < 1.0]
-        long_scenes = [d for d in durations if d > 10.0]
-        if short_scenes:
-            logger.warning(f"Found {len(short_scenes)} scenes shorter than 1s: {short_scenes[:5]}")
-        if long_scenes:
-            logger.warning(f"Found {len(long_scenes)} scenes longer than 10s: {long_scenes[:5]}")
-
-        # Log detalhado das primeiras cenas
-        for i, (scene, img, dur) in enumerate(zip(scenes[:10], sorted_images[:10], durations[:10])):
-            logger.info(
-                f"Scene {i}: '{scene.text[:40]}...' | "
-                f"{scene.start_ms/1000:.1f}s-{scene.end_ms/1000:.1f}s | "
-                f"dur={dur:.2f}s | img_idx={img.scene_index}"
-            )
 
         # Construir comando FFMPEG
         cmd = self._build_ffmpeg_command(
