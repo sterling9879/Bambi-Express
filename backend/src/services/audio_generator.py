@@ -117,13 +117,20 @@ class ElevenLabsGenerator:
             )
 
     def _get_audio_duration(self, path: Path) -> int:
-        """Retorna duração do áudio em ms."""
+        """Retorna duração do áudio em ms usando ffprobe (não carrega na RAM)."""
+        import subprocess
         try:
-            from pydub import AudioSegment
-            audio = AudioSegment.from_mp3(path)
-            return len(audio)
+            result = subprocess.run([
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(path)
+            ], capture_output=True, text=True, check=True)
+            duration_seconds = float(result.stdout.strip())
+            return int(duration_seconds * 1000)
         except Exception as e:
-            logger.warning(f"Could not get audio duration: {e}")
+            logger.warning(f"Could not get audio duration with ffprobe: {e}")
             # Fallback: estimate based on file size (rough approximation)
             # Assuming ~128kbps MP3, 16KB per second
             file_size = path.stat().st_size

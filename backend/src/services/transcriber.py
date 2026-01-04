@@ -90,15 +90,30 @@ class AssemblyAITranscriber:
         client: httpx.AsyncClient,
         audio_path: str
     ) -> str:
-        """Faz upload do áudio para AssemblyAI e retorna URL."""
+        """Faz upload do áudio para AssemblyAI e retorna URL (streaming)."""
+        import os
 
-        with open(audio_path, "rb") as f:
-            audio_data = f.read()
+        file_size = os.path.getsize(audio_path)
+        logger.info(f"Uploading audio file: {file_size / 1024 / 1024:.1f}MB")
+
+        # Usar streaming para não carregar arquivo inteiro na RAM
+        async def file_stream():
+            chunk_size = 1024 * 1024  # 1MB chunks
+            with open(audio_path, "rb") as f:
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
 
         response = await client.post(
             f"{self.BASE_URL}/upload",
-            headers={"authorization": self.api_key},
-            content=audio_data
+            headers={
+                "authorization": self.api_key,
+                "content-type": "application/octet-stream",
+                "transfer-encoding": "chunked"
+            },
+            content=file_stream()
         )
         response.raise_for_status()
 

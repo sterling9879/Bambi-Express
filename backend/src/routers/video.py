@@ -61,7 +61,23 @@ class GenerateVideoResponse(BaseModel):
 
 
 # In-memory job storage (in production, use Redis or database)
+# Limita a 50 jobs para evitar vazamento de memória
 _jobs_db: Dict[str, Dict] = {}
+_MAX_JOBS_IN_MEMORY = 50
+
+
+def _cleanup_old_jobs():
+    """Remove jobs antigos para evitar vazamento de memória."""
+    global _jobs_db
+    if len(_jobs_db) > _MAX_JOBS_IN_MEMORY:
+        # Ordenar por data de criação e manter apenas os mais recentes
+        sorted_jobs = sorted(
+            _jobs_db.items(),
+            key=lambda x: x[1].get("created_at", ""),
+            reverse=True
+        )
+        # Manter apenas os N mais recentes
+        _jobs_db = dict(sorted_jobs[:_MAX_JOBS_IN_MEMORY])
 
 
 @router.post("/generate", response_model=GenerateVideoResponse)
@@ -83,6 +99,9 @@ async def generate_video(
             status_code=400,
             detail="Texto muito longo. Máximo de 50.000 caracteres."
         )
+
+    # Cleanup old jobs to prevent memory leak
+    _cleanup_old_jobs()
 
     # Generate job ID
     job_id = str(uuid.uuid4())
