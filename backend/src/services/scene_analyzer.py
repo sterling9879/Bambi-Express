@@ -185,9 +185,19 @@ class SceneAnalyzer:
         if failed_chunks:
             self._log(f"WARNING: Chunks that failed: {failed_chunks}. Used fallback scenes.")
 
-        # Re-indexar cenas
+        # IMPORTANTE: Ordenar cenas por start_ms para garantir ordem cronológica
+        all_scenes.sort(key=lambda s: s.start_ms)
+
+        # Re-indexar cenas após ordenação
         for idx, scene in enumerate(all_scenes):
             scene.scene_index = idx
+
+        # Log para debug de durações
+        durations = [s.duration_ms / 1000 for s in all_scenes]
+        avg_duration = sum(durations) / len(durations) if durations else 0
+        min_duration = min(durations) if durations else 0
+        max_duration = max(durations) if durations else 0
+        self._log(f"Scene durations - avg: {avg_duration:.2f}s, min: {min_duration:.2f}s, max: {max_duration:.2f}s")
 
         self._log(f"Total scenes generated: {len(all_scenes)}")
 
@@ -497,20 +507,31 @@ Use APENAS: alegre, animado, calmo, dramatico, inspirador, melancolico, raiva, r
             logger.error(f"Response text (last 500 chars): {response_text[-500:]}")
             raise ValueError(f"Invalid JSON response from Gemini. Errors: {parse_errors}")
 
-        scenes = [
-            Scene(
+        scenes = []
+        for s in data["scenes"]:
+            # IMPORTANTE: Calcular duration_ms a partir dos timestamps reais
+            # Não confiar no duration_ms do Gemini
+            start_ms = s["start_ms"]
+            end_ms = s["end_ms"]
+            actual_duration_ms = end_ms - start_ms
+
+            # Validar duração mínima (100ms)
+            if actual_duration_ms < 100:
+                logger.warning(f"Scene with very short duration: {actual_duration_ms}ms, adjusting to 1000ms")
+                actual_duration_ms = 1000
+                end_ms = start_ms + actual_duration_ms
+
+            scenes.append(Scene(
                 scene_index=s["scene_index"],
                 text=s["text"],
-                start_ms=s["start_ms"],
-                end_ms=s["end_ms"],
-                duration_ms=s["duration_ms"],
+                start_ms=start_ms,
+                end_ms=end_ms,
+                duration_ms=actual_duration_ms,  # Usar duração calculada, não do Gemini
                 image_prompt=s["image_prompt"],
                 mood=s["mood"],
                 mood_intensity=s.get("mood_intensity", 0.5),
                 is_mood_transition=s.get("is_mood_transition", False)
-            )
-            for s in data["scenes"]
-        ]
+            ))
 
         music_cues = [
             MusicCue(
