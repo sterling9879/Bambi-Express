@@ -155,7 +155,7 @@ class VideoComposer:
         filter_parts = []
 
         # Add image inputs with loop for duration
-        for i, (img, duration) in enumerate(zip(sorted_images, durations)):
+        for i, (img, duration) in enumerate(zip(images, durations)):
             inputs.extend([
                 "-loop", "1",
                 "-t", str(duration),
