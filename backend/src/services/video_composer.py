@@ -94,18 +94,44 @@ class VideoComposer:
 
         logger.debug(f"Running FFMPEG command with {len(cmd)} arguments")
 
-        # Executar
+        # Executar - NÃO capturar toda saída na memória para evitar OOM
+        # FFMPEG com 129+ cenas gera MUITA saída (progresso de cada frame)
         try:
-            result = subprocess.run(
-                cmd,
-                check=True,
-                capture_output=True,
-                text=True
-            )
-            logger.debug(f"FFMPEG output: {result.stderr[-1000:]}")
+            # Redirecionar stderr para arquivo temporário para debug se necessário
+            stderr_log = self.output_dir / "ffmpeg_stderr.log"
+            with open(stderr_log, "w") as stderr_file:
+                result = subprocess.run(
+                    cmd,
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=stderr_file
+                )
+            # Ler apenas últimas linhas do log para debug
+            try:
+                with open(stderr_log, "r") as f:
+                    # Seek para perto do final para pegar últimas linhas
+                    f.seek(0, 2)  # Vai pro final
+                    file_size = f.tell()
+                    f.seek(max(0, file_size - 2000))  # Volta 2000 bytes
+                    last_lines = f.read()
+                    logger.debug(f"FFMPEG output (last 2000 chars): {last_lines}")
+            except Exception:
+                pass
+            # Limpar log após sucesso
+            stderr_log.unlink(missing_ok=True)
         except subprocess.CalledProcessError as e:
-            logger.error(f"FFMPEG error: {e.stderr[-2000:]}")
-            raise RuntimeError(f"Failed to compose video: {e.stderr[-500:]}")
+            # Ler erro do arquivo de log
+            error_msg = "Unknown error"
+            try:
+                with open(stderr_log, "r") as f:
+                    f.seek(0, 2)
+                    file_size = f.tell()
+                    f.seek(max(0, file_size - 2000))
+                    error_msg = f.read()
+            except Exception:
+                pass
+            logger.error(f"FFMPEG error: {error_msg}")
+            raise RuntimeError(f"Failed to compose video: {error_msg[-500:]}")
 
         # Calcular metadados
         total_duration = sum(durations)

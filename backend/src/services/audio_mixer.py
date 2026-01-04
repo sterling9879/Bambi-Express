@@ -196,24 +196,27 @@ class AudioMixer:
         )
 
     def _get_duration(self, audio_path: str) -> int:
-        """Retorna duração do áudio em ms."""
+        """Retorna duração do áudio em ms usando ffprobe (não carrega na memória)."""
         try:
-            from pydub import AudioSegment
-            audio = AudioSegment.from_file(audio_path)
-            return len(audio)
+            # Usar ffprobe - não carrega o arquivo na memória
+            result = subprocess.run([
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                audio_path
+            ], capture_output=True, text=True, check=True)
+            duration_seconds = float(result.stdout.strip())
+            return int(duration_seconds * 1000)
         except Exception as e:
-            logger.warning(f"Could not get duration with pydub: {e}")
-            # Fallback: use ffprobe
+            logger.warning(f"Could not get duration with ffprobe: {e}")
+            # Fallback: pydub (carrega na memória, mas é último recurso)
             try:
-                result = subprocess.run([
-                    "ffprobe",
-                    "-v", "error",
-                    "-show_entries", "format=duration",
-                    "-of", "default=noprint_wrappers=1:nokey=1",
-                    audio_path
-                ], capture_output=True, text=True, check=True)
-                duration_seconds = float(result.stdout.strip())
-                return int(duration_seconds * 1000)
+                from pydub import AudioSegment
+                audio = AudioSegment.from_file(audio_path)
+                duration = len(audio)
+                del audio  # Liberar memória imediatamente
+                return duration
             except Exception as e2:
                 logger.error(f"Could not get duration: {e2}")
                 return 0
