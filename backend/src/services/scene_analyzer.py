@@ -1,11 +1,13 @@
 """
 Serviço de análise de cenas usando Google Gemini.
+O Gemini recebe a transcrição completa com timestamps e decide
+autonomamente onde dividir as cenas.
 """
 
 import json
 import logging
 import re
-from typing import Optional
+from typing import Optional, List
 
 import google.generativeai as genai
 
@@ -18,11 +20,16 @@ class SceneAnalyzer:
     """
     Analisa transcrição e divide em cenas visuais.
 
-    Features:
-    - Divisão semântica em cenas de 3-6 segundos
-    - Geração de prompts de imagem cinematográficos
-    - Classificação de mood emocional
-    - Identificação de transições musicais
+    O Gemini recebe:
+    - Lista de palavras com timestamps exatos (da AssemblyAI)
+    - Texto completo
+    - Duração total
+
+    O Gemini decide:
+    - Onde cada cena começa e termina (usando os timestamps das palavras)
+    - O prompt de imagem para cada cena
+    - O mood de cada cena
+    - Onde a música deve mudar
     """
 
     # Schema JSON para a resposta do Gemini
@@ -39,13 +46,10 @@ class SceneAnalyzer:
                         "text": {"type": "string"},
                         "start_ms": {"type": "integer"},
                         "end_ms": {"type": "integer"},
-                        "duration_ms": {"type": "integer"},
                         "image_prompt": {"type": "string"},
-                        "mood": {"type": "string"},
-                        "mood_intensity": {"type": "number"},
-                        "is_mood_transition": {"type": "boolean"}
+                        "mood": {"type": "string"}
                     },
-                    "required": ["scene_index", "text", "start_ms", "end_ms", "duration_ms", "image_prompt", "mood"]
+                    "required": ["scene_index", "text", "start_ms", "end_ms", "image_prompt", "mood"]
                 }
             },
             "music_cues": {
@@ -64,6 +68,9 @@ class SceneAnalyzer:
         "required": ["scenes"]
     }
 
+    # Máximo de palavras por chunk (para transcrições muito longas)
+    MAX_WORDS_PER_CHUNK = 500
+
     def __init__(
         self,
         api_key: str,
@@ -72,19 +79,17 @@ class SceneAnalyzer:
         log_callback: Optional[callable] = None
     ):
         genai.configure(api_key=api_key)
-        # Configurar modelo com JSON mode para garantir resposta válida
-        # Usando snake_case para SDK google-generativeai >= 0.8.0
         self.model = genai.GenerativeModel(
             model,
             generation_config=genai.GenerationConfig(
                 response_mime_type="application/json",
                 response_schema=self.RESPONSE_SCHEMA,
                 temperature=0.7,
-                max_output_tokens=65536,  # Máximo para evitar truncamento
+                max_output_tokens=65536,
             )
         )
         self.image_style = image_style
-        self._model_name = model  # Salvar para uso em test_connection
+        self._model_name = model
         self.log_callback = log_callback
 
     def _log(self, message: str):
@@ -92,9 +97,6 @@ class SceneAnalyzer:
         logger.info(message)
         if self.log_callback:
             self.log_callback(message)
-
-    # Máximo de duração por chunk em ms (60 segundos)
-    MAX_CHUNK_DURATION_MS = 60000
 
     async def analyze(
         self,
@@ -104,58 +106,98 @@ class SceneAnalyzer:
     ) -> SceneAnalysis:
         """
         Analisa transcrição e gera cenas.
-        Para transcrições longas, processa em chunks para evitar truncamento.
 
         Args:
             transcription: TranscriptionResult da AssemblyAI
-            min_scene_duration: Duração mínima de cada cena (segundos)
-            max_scene_duration: Duração máxima de cada cena (segundos)
+            min_scene_duration: Duração mínima sugerida (segundos)
+            max_scene_duration: Duração máxima sugerida (segundos)
 
         Returns:
-            SceneAnalysis com cenas, prompts e music cues
+            SceneAnalysis com cenas definidas pelo Gemini
         """
-        # Dividir transcrição em chunks menores
-        chunks = self._split_into_chunks(transcription)
+        # Preparar dados - enviar TODAS as palavras com timestamps
+        words_data = [
+            {
+                "word": w.text,
+                "start": w.start_ms,
+                "end": w.end_ms
+            }
+            for w in transcription.words
+        ]
 
-        self._log(f"Transcription split into {len(chunks)} chunks for processing")
+        total_words = len(words_data)
+        self._log(f"Processing {total_words} words for scene analysis")
+
+        # Se transcrição é muito longa, dividir em chunks
+        if total_words > self.MAX_WORDS_PER_CHUNK:
+            return await self._analyze_in_chunks(
+                words_data,
+                transcription.full_text,
+                transcription.duration_ms,
+                min_scene_duration,
+                max_scene_duration
+            )
+
+        # Transcrição curta - processar de uma vez
+        prompt = self._build_prompt(
+            words=words_data,
+            full_text=transcription.full_text,
+            total_duration_ms=transcription.duration_ms,
+            min_duration=min_scene_duration,
+            max_duration=max_scene_duration
+        )
+
+        self._log("Sending to Gemini for scene analysis...")
+        response = await self.model.generate_content_async(prompt)
+        result = self._parse_response(response.text)
+
+        self._log(f"Generated {len(result.scenes)} scenes")
+        return result
+
+    async def _analyze_in_chunks(
+        self,
+        words_data: List[dict],
+        full_text: str,
+        total_duration_ms: int,
+        min_scene_duration: float,
+        max_scene_duration: float
+    ) -> SceneAnalysis:
+        """Processa transcrições longas em chunks."""
+
+        # Dividir palavras em chunks
+        chunks = []
+        for i in range(0, len(words_data), self.MAX_WORDS_PER_CHUNK):
+            chunk = words_data[i:i + self.MAX_WORDS_PER_CHUNK]
+            chunks.append(chunk)
+
+        self._log(f"Splitting into {len(chunks)} chunks for processing")
 
         all_scenes = []
         all_music_cues = []
         style_guide = ""
-        failed_chunks = []
 
         for i, chunk in enumerate(chunks):
             self._log(f"Processing chunk {i+1}/{len(chunks)} with Gemini...")
 
             try:
-                chunk_data = {
-                    "segments": [
-                        {
-                            "text": seg.text,
-                            "start_ms": seg.start_ms,
-                            "end_ms": seg.end_ms,
-                            "words": [
-                                {"text": w.text, "start_ms": w.start_ms, "end_ms": w.end_ms}
-                                for w in seg.words
-                            ]
-                        }
-                        for seg in chunk
-                    ],
-                    "chunk_index": i,
-                    "total_chunks": len(chunks),
-                }
+                # Extrair texto do chunk
+                chunk_text = " ".join(w["word"] for w in chunk)
+                chunk_start = chunk[0]["start"]
+                chunk_end = chunk[-1]["end"]
 
                 prompt = self._build_prompt(
-                    chunk_data,
-                    min_scene_duration,
-                    max_scene_duration,
-                    self.image_style
+                    words=chunk,
+                    full_text=chunk_text,
+                    total_duration_ms=chunk_end - chunk_start,
+                    min_duration=min_scene_duration,
+                    max_duration=max_scene_duration,
+                    chunk_info={"index": i, "total": len(chunks)}
                 )
 
                 response = await self.model.generate_content_async(prompt)
                 chunk_result = self._parse_response(response.text)
 
-                # Usar style_guide do primeiro chunk bem-sucedido
+                # Usar style_guide do primeiro chunk
                 if not style_guide and chunk_result.style_guide:
                     style_guide = chunk_result.style_guide
 
@@ -163,29 +205,22 @@ class SceneAnalyzer:
                 all_music_cues.extend(chunk_result.music_cues)
 
             except Exception as e:
-                self._log(f"ERROR: Processing chunk {i+1}/{len(chunks)} failed: {e}")
-                failed_chunks.append(i + 1)
-                # Criar cenas básicas para o chunk que falhou
-                for seg in chunk:
-                    fallback_scene = Scene(
-                        scene_index=len(all_scenes),
-                        text=seg.text,
-                        start_ms=seg.start_ms,
-                        end_ms=seg.end_ms,
-                        duration_ms=seg.end_ms - seg.start_ms,
-                        image_prompt=f"Abstract cinematic visualization of: {seg.text[:100]}",
-                        mood="calmo",
-                        mood_intensity=0.5,
-                        is_mood_transition=False
-                    )
-                    all_scenes.append(fallback_scene)
-                self._log(f"WARNING: Using fallback scenes for chunk {i+1}")
-                continue
+                self._log(f"ERROR: Chunk {i+1} failed: {e}")
+                # Criar cena fallback para o chunk
+                fallback_scene = Scene(
+                    scene_index=len(all_scenes),
+                    text=" ".join(w["word"] for w in chunk[:50]) + "...",
+                    start_ms=chunk[0]["start"],
+                    end_ms=chunk[-1]["end"],
+                    duration_ms=chunk[-1]["end"] - chunk[0]["start"],
+                    image_prompt=f"Cinematic visualization, dramatic lighting, 8k quality, {self.image_style}",
+                    mood="neutral",
+                    mood_intensity=0.5,
+                    is_mood_transition=False
+                )
+                all_scenes.append(fallback_scene)
 
-        if failed_chunks:
-            self._log(f"WARNING: Chunks that failed: {failed_chunks}. Used fallback scenes.")
-
-        # Re-indexar cenas na ordem que vieram (Gemini já retorna em ordem cronológica)
+        # Re-indexar cenas
         for idx, scene in enumerate(all_scenes):
             scene.scene_index = idx
 
@@ -197,207 +232,172 @@ class SceneAnalyzer:
             music_cues=all_music_cues
         )
 
-    def _split_into_chunks(self, transcription: TranscriptionResult) -> list:
-        """
-        Divide a transcrição em chunks de no máximo MAX_CHUNK_DURATION_MS.
-        Tenta dividir em pausas naturais (entre segmentos).
-        """
-        if not transcription.segments:
-            return []
-
-        chunks = []
-        current_chunk = []
-        chunk_start_ms = transcription.segments[0].start_ms
-
-        for segment in transcription.segments:
-            current_chunk.append(segment)
-            chunk_duration = segment.end_ms - chunk_start_ms
-
-            # Se o chunk atingiu o limite, finaliza e começa novo
-            if chunk_duration >= self.MAX_CHUNK_DURATION_MS:
-                chunks.append(current_chunk)
-                current_chunk = []
-                # O próximo chunk começa após este segmento
-                if segment != transcription.segments[-1]:
-                    next_idx = transcription.segments.index(segment) + 1
-                    if next_idx < len(transcription.segments):
-                        chunk_start_ms = transcription.segments[next_idx].start_ms
-
-        # Adicionar o último chunk se houver segmentos restantes
-        if current_chunk:
-            chunks.append(current_chunk)
-
-        return chunks
-
     def _build_prompt(
         self,
-        transcription_data: dict,
+        words: List[dict],
+        full_text: str,
+        total_duration_ms: int,
         min_duration: float,
         max_duration: float,
-        image_style: str = ""
+        chunk_info: Optional[dict] = None
     ) -> str:
         """Constrói prompt para o Gemini."""
 
         style_instruction = ""
-        if image_style:
-            style_instruction = f"""
-ESTILO VISUAL OBRIGATÓRIO:
-Todos os prompts de imagem DEVEM terminar com este estilo: "{image_style}"
-"""
+        if self.image_style:
+            style_instruction = f'\nESTILO VISUAL OBRIGATÓRIO: Todos os prompts devem terminar com: "{self.image_style}"'
 
-        chunk_info = ""
-        if "chunk_index" in transcription_data:
-            chunk_info = f"""
-INFORMAÇÃO DO CHUNK:
-Este é o chunk {transcription_data['chunk_index'] + 1} de {transcription_data['total_chunks']}.
-Processe APENAS os segmentos fornecidos abaixo.
-"""
+        chunk_note = ""
+        if chunk_info:
+            chunk_note = f"\n(Este é o chunk {chunk_info['index']+1} de {chunk_info['total']})"
 
-        return f"""Você é um diretor de arte criativo criando um vídeo narrado.
+        return f"""Você é um diretor de arte profissional criando um vídeo narrado.{chunk_note}
 
-Sua tarefa é analisar a transcrição e criar cenas visuais que ILUSTREM VISUALMENTE o conteúdo falado.
-{style_instruction}{chunk_info}
-=== REGRAS CRÍTICAS ===
+## SUA TAREFA
 
-1. CADA CENA DEVE ILUSTRAR VISUALMENTE O QUE ESTÁ SENDO FALADO:
-   - Se o narrador fala sobre "o sol nascendo", a imagem deve mostrar um nascer do sol
-   - Se fala sobre "uma cidade movimentada", mostre uma cidade com movimento
-   - Se fala sobre "sentimentos de tristeza", mostre uma cena que evoque melancolia
-   - NUNCA crie imagens genéricas que não se relacionam com o texto
+Analise a transcrição com timestamps EXATOS de cada palavra e divida em CENAS VISUAIS.
+Cada cena terá uma imagem gerada que deve ILUSTRAR VISUALMENTE o que está sendo falado.
 
-2. TIMING E DURAÇÃO:
-   - Cada cena deve ter entre {min_duration} e {max_duration} segundos
-   - Use EXATAMENTE os timestamps das palavras (start_ms e end_ms)
-   - O start_ms da cena deve ser o start_ms da primeira palavra da cena
-   - O end_ms da cena deve ser o end_ms da última palavra da cena
-   - NUNCA corte no meio de uma frase - termine sempre em pausas naturais
+## DADOS DE ENTRADA
 
-3. PROMPTS DE IMAGEM CINEMATOGRÁFICOS:
-   - Escreva em INGLÊS
-   - Seja ESPECÍFICO e DETALHADO (mínimo 30 palavras por prompt)
-   - Inclua: composição, iluminação, atmosfera, cores, ângulo de câmera
-   - Descreva elementos concretos, não abstratos
-   - Mantenha consistência visual entre cenas (mesmo estilo, paleta de cores)
+**Texto completo:**
+{full_text}
 
-4. EXEMPLO DE BOM PROMPT:
-   Texto: "A tecnologia está mudando a forma como trabalhamos"
-   BOM: "Modern open office space with diverse professionals working on sleek computers, holographic displays floating above desks, warm ambient lighting mixed with blue tech glow, wide angle shot, cinematic composition, 8k, photorealistic"
-   RUIM: "Abstract visualization of technology" (muito genérico!)
+**Duração total:** {total_duration_ms}ms ({total_duration_ms/1000:.1f} segundos)
 
-5. EXEMPLO DE ALINHAMENTO:
-   Se o texto diz "Imagine um oceano calmo ao pôr do sol", a imagem DEVE mostrar um oceano ao pôr do sol, não uma cena aleatória.
+**Palavras com timestamps (ms):**
+{json.dumps(words, ensure_ascii=False)}
 
-=== CLASSIFICAÇÃO DE MOOD ===
-Use APENAS: alegre, animado, calmo, dramatico, inspirador, melancolico, raiva, romantico, sombrio, vibrante
+## REGRAS CRÍTICAS PARA DIVISÃO DE CENAS
 
-=== TRANSCRIÇÃO COM TIMESTAMPS ===
-{json.dumps(transcription_data["segments"], ensure_ascii=False, indent=2)}
+1. **USE TIMESTAMPS REAIS** - start_ms e end_ms DEVEM ser timestamps de palavras da lista acima
+2. **DURAÇÃO: {min_duration}-{max_duration} segundos** - Pode variar se necessário para não cortar ideias
+3. **NUNCA CORTE NO MEIO DE UMA FRASE** - Cada cena deve ter sentido completo
+4. **SEM GAPS** - O start_ms da cena N+1 deve ser igual ao end_ms da cena N
+5. **COBERTURA TOTAL** - Primeira cena começa no primeiro timestamp, última termina no último
 
-=== FORMATO DE RESPOSTA (JSON) ===
+## REGRAS PARA PROMPTS DE IMAGEM
+
+1. **ILUSTRE O CONTEÚDO** - A imagem deve representar visualmente o que está sendo falado
+   - Se fala de "tecnologia", mostre computadores, circuitos, telas
+   - Se fala de "natureza", mostre paisagens, plantas, animais
+   - Se fala de "pessoas", mostre pessoas em contexto relevante
+2. **ESCREVA EM INGLÊS**
+3. **SEJA ESPECÍFICO** - Mínimo 25 palavras descrevendo a cena
+4. **SEJA CINEMATOGRÁFICO** - Use termos como "cinematic shot", "dramatic lighting", "8k", "wide angle"
+5. **MANTENHA CONSISTÊNCIA** - Mesmo estilo visual em todas as cenas{style_instruction}
+
+## EXEMPLO
+
+Se o texto diz: "A inteligência artificial está transformando o mercado de trabalho"
+BOM prompt: "Modern office environment with holographic AI interfaces floating above desks, diverse professionals collaborating with digital assistants, warm ambient lighting mixed with blue tech glow, wide angle cinematic shot, 8k, photorealistic"
+RUIM prompt: "Abstract AI concept" (muito genérico!)
+
+## MOODS PERMITIDOS
+
+Use apenas: alegre, animado, calmo, dramatico, inspirador, melancolico, neutro, epico, suspense
+
+## FORMATO DE SAÍDA (JSON)
+
 {{
-    "style_guide": "descrição detalhada do estilo visual a manter em todas as cenas",
+    "style_guide": "Descrição do estilo visual geral",
     "scenes": [
         {{
             "scene_index": 0,
-            "text": "texto exato falado nesta cena",
+            "text": "Texto exato falado nesta cena",
             "start_ms": 0,
-            "end_ms": 4500,
-            "duration_ms": 4500,
-            "image_prompt": "Detailed cinematic description that DIRECTLY illustrates what is being said..., {image_style if image_style else '8k, cinematic'}",
-            "mood": "inspirador",
-            "mood_intensity": 0.8,
-            "is_mood_transition": false
+            "end_ms": 4520,
+            "image_prompt": "Detailed cinematic description...",
+            "mood": "inspirador"
         }}
     ],
     "music_cues": [
-        {{
-            "timestamp_ms": 0,
-            "mood": "inspirador",
-            "suggestion": "música épica orquestral"
-        }}
+        {{"timestamp_ms": 0, "mood": "inspirador", "suggestion": "Música épica orquestral"}}
     ]
 }}"""
 
-    def _fix_unescaped_quotes_in_strings(self, json_str: str) -> str:
-        """
-        Tenta corrigir aspas não escapadas dentro de strings JSON.
-        Esta é uma operação complexa que processa caractere por caractere.
-        """
-        result = []
-        i = 0
-        in_string = False
-        string_start = -1
+    def _parse_response(self, response_text: str) -> SceneAnalysis:
+        """Converte resposta do Gemini em SceneAnalysis."""
 
-        while i < len(json_str):
-            char = json_str[i]
+        # Limpar resposta
+        cleaned = response_text.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.split("\n")
+            start_idx = 0
+            end_idx = len(lines)
+            for i, line in enumerate(lines):
+                if line.startswith("```") and i == 0:
+                    start_idx = 1
+                elif line.startswith("```"):
+                    end_idx = i
+                    break
+            cleaned = "\n".join(lines[start_idx:end_idx])
 
-            if char == '\\' and i + 1 < len(json_str):
-                # Caractere de escape - adiciona os dois caracteres
-                result.append(char)
-                result.append(json_str[i + 1])
-                i += 2
-                continue
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:]
+        cleaned = cleaned.strip()
 
-            if char == '"':
-                if not in_string:
-                    # Início de uma string
-                    in_string = True
-                    string_start = i
-                    result.append(char)
-                else:
-                    # Pode ser fim da string ou aspas não escapadas
-                    # Verifica se o próximo caractere indica fim de string
-                    next_chars = json_str[i+1:i+20].lstrip()
-                    if next_chars and next_chars[0] in ':,}]\n':
-                        # Provavelmente é o fim da string
-                        in_string = False
-                        result.append(char)
-                    elif next_chars and next_chars[0] == '"':
-                        # Próximo é outra aspas, provavelmente fim desta + início de outra
-                        in_string = False
-                        result.append(char)
-                    else:
-                        # Aspas no meio da string - escapar
-                        result.append('\\')
-                        result.append(char)
-                i += 1
-            else:
-                result.append(char)
-                i += 1
+        # Extrair objeto JSON
+        cleaned = self._extract_json_object(cleaned)
 
-        return ''.join(result)
+        # Tentar parse
+        data = None
+        parse_errors = []
 
-    def _repair_json(self, json_str: str) -> str:
-        """Tenta reparar JSON malformado comum do Gemini."""
-        repaired = json_str
+        try:
+            data = json.loads(cleaned)
+        except json.JSONDecodeError as e:
+            parse_errors.append(f"Direct parse: {e}")
+            try:
+                repaired = self._repair_json(cleaned)
+                data = json.loads(repaired)
+            except json.JSONDecodeError as e2:
+                parse_errors.append(f"After repair: {e2}")
 
-        # Remove trailing commas before } or ]
-        repaired = re.sub(r',(\s*[}\]])', r'\1', repaired)
+        if data is None:
+            logger.error(f"JSON parse failed: {parse_errors}")
+            raise ValueError(f"Invalid JSON from Gemini: {parse_errors}")
 
-        # Fix missing commas between objects/arrays
-        repaired = re.sub(r'}\s*{', '},{', repaired)
-        repaired = re.sub(r']\s*\[', '],[', repaired)
+        # Converter para objetos Scene
+        scenes = []
+        for s in data["scenes"]:
+            duration_ms = s["end_ms"] - s["start_ms"]
+            if duration_ms < 1000:
+                duration_ms = 1000
 
-        # Fix missing quotes on keys (common LLM error)
-        repaired = re.sub(r'(\{|\,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', repaired)
+            scenes.append(Scene(
+                scene_index=s["scene_index"],
+                text=s["text"],
+                start_ms=s["start_ms"],
+                end_ms=s["end_ms"],
+                duration_ms=duration_ms,
+                image_prompt=s["image_prompt"],
+                mood=s["mood"],
+                mood_intensity=0.7,
+                is_mood_transition=False
+            ))
 
-        # Remove any control characters except \n, \r, \t
-        repaired = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', repaired)
+        music_cues = [
+            MusicCue(
+                timestamp_ms=m["timestamp_ms"],
+                mood=m["mood"],
+                suggestion=m["suggestion"]
+            )
+            for m in data.get("music_cues", [])
+        ]
 
-        # Replace newlines inside strings with spaces (common issue)
-        # This is a simplified approach - replace \n that are not after a comma or brace
-        repaired = re.sub(r'(?<=[a-zA-Z,.])\n(?=[a-zA-Z])', ' ', repaired)
-
-        return repaired
+        return SceneAnalysis(
+            style_guide=data.get("style_guide", ""),
+            scenes=scenes,
+            music_cues=music_cues
+        )
 
     def _extract_json_object(self, text: str) -> str:
         """Extrai o primeiro objeto JSON completo do texto."""
-        # Encontrar o início do JSON
         start = text.find('{')
         if start == -1:
             return text
 
-        # Contar chaves para encontrar o fim
         depth = 0
         in_string = False
         escape_next = False
@@ -421,133 +421,23 @@ Use APENAS: alegre, animado, calmo, dramatico, inspirador, melancolico, raiva, r
                 if depth == 0:
                     return text[start:i+1]
 
-        # Se não encontrou o fim, retorna do início até o final
         return text[start:]
 
-    def _parse_response(self, response_text: str) -> SceneAnalysis:
-        """Converte resposta do Gemini em SceneAnalysis."""
-
-        # Limpar resposta (remover possíveis ```json```)
-        cleaned = response_text.strip()
-        if cleaned.startswith("```"):
-            # Find the content between ``` markers
-            lines = cleaned.split("\n")
-            start_idx = 0
-            end_idx = len(lines)
-
-            for i, line in enumerate(lines):
-                if line.startswith("```") and i == 0:
-                    start_idx = 1
-                elif line.startswith("```"):
-                    end_idx = i
-                    break
-
-            cleaned = "\n".join(lines[start_idx:end_idx])
-
-        # Remove any leading "json" if present
-        if cleaned.startswith("json"):
-            cleaned = cleaned[4:]
-
-        cleaned = cleaned.strip()
-
-        # Extrair apenas o objeto JSON
-        cleaned = self._extract_json_object(cleaned)
-
-        # Tentar fazer parse do JSON
-        data = None
-        parse_errors = []
-
-        # Tentativa 1: JSON direto
-        try:
-            data = json.loads(cleaned)
-        except json.JSONDecodeError as e:
-            parse_errors.append(f"Direct parse: {e}")
-
-            # Tentativa 2: Reparar JSON básico
-            try:
-                repaired = self._repair_json(cleaned)
-                data = json.loads(repaired)
-                logger.info("JSON was repaired successfully (basic)")
-            except json.JSONDecodeError as e2:
-                parse_errors.append(f"After basic repair: {e2}")
-
-                # Tentativa 3: Corrigir aspas não escapadas
-                try:
-                    quote_fixed = self._fix_unescaped_quotes_in_strings(cleaned)
-                    quote_fixed = self._repair_json(quote_fixed)
-                    data = json.loads(quote_fixed)
-                    logger.info("JSON was repaired successfully (quote fix)")
-                except json.JSONDecodeError as e3:
-                    parse_errors.append(f"After quote fix: {e3}")
-
-                    # Tentativa 4: Truncar até último } válido
-                    try:
-                        last_brace = cleaned.rfind('}')
-                        if last_brace > 0:
-                            truncated = cleaned[:last_brace+1]
-                            truncated = self._repair_json(truncated)
-                            data = json.loads(truncated)
-                            logger.warning("JSON was truncated and repaired")
-                    except json.JSONDecodeError as e4:
-                        parse_errors.append(f"After truncation: {e4}")
-
-        if data is None:
-            logger.error(f"All JSON parse attempts failed: {parse_errors}")
-            logger.error(f"Response text (first 1000 chars): {response_text[:1000]}")
-            logger.error(f"Response text (last 500 chars): {response_text[-500:]}")
-            raise ValueError(f"Invalid JSON response from Gemini. Errors: {parse_errors}")
-
-        scenes = []
-        for s in data["scenes"]:
-            # Usar os valores do Gemini diretamente
-            # O Gemini define a estrutura das cenas baseado no conteúdo
-            duration_ms = s.get("duration_ms", s["end_ms"] - s["start_ms"])
-
-            # Garantir duração mínima de 1 segundo
-            if duration_ms < 1000:
-                duration_ms = 1000
-
-            scenes.append(Scene(
-                scene_index=s["scene_index"],
-                text=s["text"],
-                start_ms=s["start_ms"],
-                end_ms=s["end_ms"],
-                duration_ms=duration_ms,
-                image_prompt=s["image_prompt"],
-                mood=s["mood"],
-                mood_intensity=s.get("mood_intensity", 0.5),
-                is_mood_transition=s.get("is_mood_transition", False)
-            ))
-
-        music_cues = [
-            MusicCue(
-                timestamp_ms=m["timestamp_ms"],
-                mood=m["mood"],
-                suggestion=m["suggestion"]
-            )
-            for m in data.get("music_cues", [])
-        ]
-
-        return SceneAnalysis(
-            style_guide=data.get("style_guide", ""),
-            scenes=scenes,
-            music_cues=music_cues
-        )
+    def _repair_json(self, json_str: str) -> str:
+        """Tenta reparar JSON malformado."""
+        repaired = json_str
+        repaired = re.sub(r',(\s*[}\]])', r'\1', repaired)
+        repaired = re.sub(r'}\s*{', '},{', repaired)
+        repaired = re.sub(r']\s*\[', '],[', repaired)
+        repaired = re.sub(r'(\{|\,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', repaired)
+        repaired = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', repaired)
+        return repaired
 
     async def test_connection(self) -> dict:
         """Testa conexão com a API."""
         try:
-            # Usar modelo sem JSON mode para teste simples
             test_model = genai.GenerativeModel(self._model_name)
-            response = await test_model.generate_content_async(
-                "Say 'OK' if you can hear me."
-            )
-            return {
-                "connected": True,
-                "response": response.text[:50]
-            }
+            response = await test_model.generate_content_async("Say 'OK'")
+            return {"connected": True, "response": response.text[:50]}
         except Exception as e:
-            return {
-                "connected": False,
-                "error": str(e)
-            }
+            return {"connected": False, "error": str(e)}
