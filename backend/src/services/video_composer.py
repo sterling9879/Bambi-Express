@@ -39,9 +39,9 @@ MOOD_COLORS = {
 }
 
 # Configurações de processamento
-BATCH_SIZE = 15  # Reduzido para maior estabilidade
-MAX_SCENES_FOR_KEN_BURNS = 100  # Acima disso, desabilita Ken Burns
-MAX_SCENES_FOR_TRANSITIONS = 150  # Acima disso, usa apenas concat simples
+BATCH_SIZE = 15  # Cenas por lote (evita filter_complex muito grande)
+MAX_SCENES_FOR_KEN_BURNS = 300  # Ken Burns funciona bem com batch processing
+MAX_SCENES_FOR_TRANSITIONS = 500  # Transições funcionam bem com batch processing
 FFMPEG_THREADS = 2  # Limitar threads para evitar OOM
 TIMEOUT_PER_SCENE = 10  # Segundos de timeout por cena
 
