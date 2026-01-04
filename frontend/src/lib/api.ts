@@ -57,7 +57,44 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 30000, // 30 segundos timeout
 });
+
+// Interceptor para tratar erros de forma consistente
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Timeout
+    if (error.code === 'ECONNABORTED') {
+      const customError = new Error('Servidor demorou muito para responder. Tente novamente.');
+      return Promise.reject(customError);
+    }
+
+    // Sem conexão
+    if (!error.response) {
+      const customError = new Error('Erro de conexão com o servidor. Verifique se o backend está rodando.');
+      return Promise.reject(customError);
+    }
+
+    // Erro HTTP
+    const status = error.response.status;
+    const data = error.response.data;
+
+    let message = data?.detail || data?.message || data?.error || `Erro ${status}`;
+
+    // Mensagens amigáveis por código
+    if (status === 500) {
+      message = `Erro interno do servidor: ${message}`;
+    } else if (status === 503) {
+      message = 'Servidor temporariamente indisponível. Aguarde e tente novamente.';
+    } else if (status === 504) {
+      message = 'Timeout do servidor. A operação demorou muito.';
+    }
+
+    const customError = new Error(message);
+    return Promise.reject(customError);
+  }
+);
 
 // Config API
 export const configApi = {

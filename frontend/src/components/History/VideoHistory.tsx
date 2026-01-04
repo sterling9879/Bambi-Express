@@ -11,7 +11,9 @@ import {
   HardDrive,
   FolderOpen,
   ChevronDown,
-  Play
+  Play,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { historyApi, channelsApi } from '@/lib/api';
 import type { VideoHistory as VideoHistoryType, Channel } from '@/lib/types';
@@ -21,12 +23,12 @@ export function VideoHistory() {
   const [expandedVideo, setExpandedVideo] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  const { data: channels = [] } = useQuery({
+  const { data: channels = [], isError: channelsError, refetch: refetchChannels } = useQuery({
     queryKey: ['channels'],
     queryFn: channelsApi.list,
   });
 
-  const { data: videosData, isLoading } = useQuery({
+  const { data: videosData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['videos', selectedChannel],
     queryFn: () => historyApi.listVideos({
       channelId: selectedChannel || undefined,
@@ -95,7 +97,27 @@ export function VideoHistory() {
       </div>
 
       {/* Videos List */}
-      {isLoading ? (
+      {isError ? (
+        <div className="text-center py-12">
+          <AlertCircle className="w-16 h-16 mx-auto text-red-400 mb-4" />
+          <p className="text-red-500 dark:text-red-400 font-medium">
+            Erro ao carregar histórico
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto">
+            {error instanceof Error ? error.message : 'Erro desconhecido'}
+          </p>
+          <button
+            onClick={() => {
+              refetch();
+              refetchChannels();
+            }}
+            className="mt-4 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center space-x-2 mx-auto"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Tentar novamente</span>
+          </button>
+        </div>
+      ) : isLoading ? (
         <div className="text-center py-12 text-gray-500">
           Carregando...
         </div>
