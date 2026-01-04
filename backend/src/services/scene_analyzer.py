@@ -68,8 +68,9 @@ class SceneAnalyzer:
         "required": ["scenes"]
     }
 
-    # Máximo de palavras por chunk (para transcrições muito longas)
-    MAX_WORDS_PER_CHUNK = 500
+    # Máximo de duração por chunk em ms (60 segundos)
+    # Para roteiros longos (20+ min), processamos em partes de 1 minuto
+    MAX_CHUNK_DURATION_MS = 60000
 
     def __init__(
         self,
@@ -106,6 +107,7 @@ class SceneAnalyzer:
     ) -> SceneAnalysis:
         """
         Analisa transcrição e gera cenas.
+        Para transcrições longas (20+ min), processa em chunks de 60 segundos.
 
         Args:
             transcription: TranscriptionResult da AssemblyAI
@@ -115,80 +117,36 @@ class SceneAnalyzer:
         Returns:
             SceneAnalysis com cenas definidas pelo Gemini
         """
-        # Preparar dados - enviar TODAS as palavras com timestamps
-        words_data = [
-            {
-                "word": w.text,
-                "start": w.start_ms,
-                "end": w.end_ms
-            }
-            for w in transcription.words
-        ]
+        total_duration_ms = transcription.duration_ms
+        total_words = len(transcription.words)
 
-        total_words = len(words_data)
-        self._log(f"Processing {total_words} words for scene analysis")
+        self._log(f"Processing {total_words} words ({total_duration_ms/1000:.1f}s) for scene analysis")
 
-        # Se transcrição é muito longa, dividir em chunks
-        if total_words > self.MAX_WORDS_PER_CHUNK:
-            return await self._analyze_in_chunks(
-                words_data,
-                transcription.full_text,
-                transcription.duration_ms,
-                min_scene_duration,
-                max_scene_duration
-            )
+        # Dividir em chunks de 60 segundos
+        chunks = self._split_words_into_chunks(transcription.words)
 
-        # Transcrição curta - processar de uma vez
-        prompt = self._build_prompt(
-            words=words_data,
-            full_text=transcription.full_text,
-            total_duration_ms=transcription.duration_ms,
-            min_duration=min_scene_duration,
-            max_duration=max_scene_duration
-        )
-
-        self._log("Sending to Gemini for scene analysis...")
-        response = await self.model.generate_content_async(prompt)
-        result = self._parse_response(response.text)
-
-        self._log(f"Generated {len(result.scenes)} scenes")
-        return result
-
-    async def _analyze_in_chunks(
-        self,
-        words_data: List[dict],
-        full_text: str,
-        total_duration_ms: int,
-        min_scene_duration: float,
-        max_scene_duration: float
-    ) -> SceneAnalysis:
-        """Processa transcrições longas em chunks."""
-
-        # Dividir palavras em chunks
-        chunks = []
-        for i in range(0, len(words_data), self.MAX_WORDS_PER_CHUNK):
-            chunk = words_data[i:i + self.MAX_WORDS_PER_CHUNK]
-            chunks.append(chunk)
-
-        self._log(f"Splitting into {len(chunks)} chunks for processing")
+        self._log(f"Split into {len(chunks)} chunks of ~60s each")
 
         all_scenes = []
         all_music_cues = []
         style_guide = ""
 
-        for i, chunk in enumerate(chunks):
+        for i, chunk_words in enumerate(chunks):
             self._log(f"Processing chunk {i+1}/{len(chunks)} with Gemini...")
 
             try:
-                # Extrair texto do chunk
-                chunk_text = " ".join(w["word"] for w in chunk)
-                chunk_start = chunk[0]["start"]
-                chunk_end = chunk[-1]["end"]
+                # Preparar dados do chunk
+                words_data = [
+                    {"word": w.text, "start": w.start_ms, "end": w.end_ms}
+                    for w in chunk_words
+                ]
+                chunk_text = " ".join(w.text for w in chunk_words)
+                chunk_duration = chunk_words[-1].end_ms - chunk_words[0].start_ms
 
                 prompt = self._build_prompt(
-                    words=chunk,
+                    words=words_data,
                     full_text=chunk_text,
-                    total_duration_ms=chunk_end - chunk_start,
+                    total_duration_ms=chunk_duration,
                     min_duration=min_scene_duration,
                     max_duration=max_scene_duration,
                     chunk_info={"index": i, "total": len(chunks)}
@@ -204,17 +162,19 @@ class SceneAnalyzer:
                 all_scenes.extend(chunk_result.scenes)
                 all_music_cues.extend(chunk_result.music_cues)
 
+                self._log(f"Chunk {i+1}: {len(chunk_result.scenes)} scenes generated")
+
             except Exception as e:
                 self._log(f"ERROR: Chunk {i+1} failed: {e}")
-                # Criar cena fallback para o chunk
+                # Criar cena fallback para o chunk inteiro
                 fallback_scene = Scene(
                     scene_index=len(all_scenes),
-                    text=" ".join(w["word"] for w in chunk[:50]) + "...",
-                    start_ms=chunk[0]["start"],
-                    end_ms=chunk[-1]["end"],
-                    duration_ms=chunk[-1]["end"] - chunk[0]["start"],
-                    image_prompt=f"Cinematic visualization, dramatic lighting, 8k quality, {self.image_style}",
-                    mood="neutral",
+                    text=chunk_text[:100] + "...",
+                    start_ms=chunk_words[0].start_ms,
+                    end_ms=chunk_words[-1].end_ms,
+                    duration_ms=chunk_words[-1].end_ms - chunk_words[0].start_ms,
+                    image_prompt=f"Cinematic visualization, dramatic lighting, 8k, {self.image_style}",
+                    mood="neutro",
                     mood_intensity=0.5,
                     is_mood_transition=False
                 )
@@ -224,13 +184,46 @@ class SceneAnalyzer:
         for idx, scene in enumerate(all_scenes):
             scene.scene_index = idx
 
-        self._log(f"Total scenes generated: {len(all_scenes)}")
+        self._log(f"Total: {len(all_scenes)} scenes generated")
 
         return SceneAnalysis(
             style_guide=style_guide,
             scenes=all_scenes,
             music_cues=all_music_cues
         )
+
+    def _split_words_into_chunks(self, words: List) -> List[List]:
+        """
+        Divide palavras em chunks de ~60 segundos.
+        Tenta não cortar no meio de frases.
+        """
+        if not words:
+            return []
+
+        chunks = []
+        current_chunk = []
+        chunk_start_ms = words[0].start_ms
+
+        for word in words:
+            current_chunk.append(word)
+            chunk_duration = word.end_ms - chunk_start_ms
+
+            # Se atingiu ~60 segundos e está em fim de frase
+            if chunk_duration >= self.MAX_CHUNK_DURATION_MS:
+                # Verificar se é fim de frase
+                is_sentence_end = word.text.rstrip().endswith(('.', '!', '?', '...'))
+
+                if is_sentence_end or chunk_duration >= self.MAX_CHUNK_DURATION_MS * 1.2:
+                    chunks.append(current_chunk)
+                    current_chunk = []
+                    # Próximo chunk começa após esta palavra
+                    chunk_start_ms = word.end_ms
+
+        # Adicionar último chunk
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        return chunks
 
     def _build_prompt(
         self,
