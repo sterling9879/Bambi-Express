@@ -109,18 +109,29 @@ class JobOrchestrator:
                 output_dir=str(job_temp_dir)
             )
 
+            # Progress callback simples - sem asyncio.create_task para evitar tasks órfãs
+            def audio_progress(c, t):
+                try:
+                    # Atualização síncrona para evitar race conditions
+                    if self.status_callback:
+                        from ..models.job import JobStatus
+                        status = JobStatus(
+                            job_id=job_id,
+                            status=JobStatusEnum.GENERATING_AUDIO,
+                            progress=0.10 + (c / t) * 0.15,
+                            current_step=f"Gerando áudio {c}/{t}",
+                            details={"chunks_completed": c, "chunks_total": t},
+                            logs=self._logs.copy(),
+                            started_at=started_at,
+                            updated_at=datetime.now()
+                        )
+                        self.status_callback(status)
+                except Exception as e:
+                    logger.warning(f"Audio progress callback error: {e}")
+
             audio_chunks = await audio_generator.generate_all(
                 chunks,
-                progress_callback=lambda c, t: asyncio.create_task(
-                    self._update_status(
-                        job_id,
-                        JobStatusEnum.GENERATING_AUDIO,
-                        0.10 + (c / t) * 0.15,
-                        f"Gerando áudio {c}/{t}",
-                        started_at,
-                        {"chunks_completed": c, "chunks_total": t}
-                    )
-                )
+                progress_callback=audio_progress
             )
 
             # 3. Concatenar áudios
@@ -146,18 +157,29 @@ class JobOrchestrator:
                 api_key=self.config.api.assemblyai.api_key
             )
 
+            # Progress callback para transcrição
+            def transcribe_progress(s, p):
+                try:
+                    if self.status_callback:
+                        from ..models.job import JobStatus
+                        status = JobStatus(
+                            job_id=job_id,
+                            status=JobStatusEnum.TRANSCRIBING,
+                            progress=0.30 + p * 0.10,
+                            current_step=f"Transcrevendo: {s}",
+                            details={},
+                            logs=self._logs.copy(),
+                            started_at=started_at,
+                            updated_at=datetime.now()
+                        )
+                        self.status_callback(status)
+                except Exception as e:
+                    logger.warning(f"Transcribe progress callback error: {e}")
+
             transcription = await transcriber.transcribe(
                 audio_path=merged_audio.path,
                 language_code=self.config.api.assemblyai.language_code,
-                progress_callback=lambda s, p: asyncio.create_task(
-                    self._update_status(
-                        job_id,
-                        JobStatusEnum.TRANSCRIBING,
-                        0.30 + p * 0.10,
-                        f"Transcrevendo: {s}",
-                        started_at
-                    )
-                )
+                progress_callback=transcribe_progress
             )
 
             self._add_log(
@@ -242,18 +264,28 @@ class JobOrchestrator:
                 log_callback=self._add_log
             )
 
+            # Progress callback para imagens - o mais crítico (121+ chamadas)
+            def image_progress(c, t):
+                try:
+                    if self.status_callback:
+                        from ..models.job import JobStatus
+                        status = JobStatus(
+                            job_id=job_id,
+                            status=JobStatusEnum.GENERATING_IMAGES,
+                            progress=0.50 + (c / t) * 0.30,
+                            current_step=f"Gerando imagem {c}/{t}",
+                            details={"images_completed": c, "images_total": t},
+                            logs=self._logs.copy(),
+                            started_at=started_at,
+                            updated_at=datetime.now()
+                        )
+                        self.status_callback(status)
+                except Exception as e:
+                    logger.warning(f"Image progress callback error: {e}")
+
             images = await image_generator.generate_all(
                 scene_analysis.scenes,
-                progress_callback=lambda c, t: asyncio.create_task(
-                    self._update_status(
-                        job_id,
-                        JobStatusEnum.GENERATING_IMAGES,
-                        0.50 + (c / t) * 0.30,
-                        f"Gerando imagem {c}/{t}",
-                        started_at,
-                        {"images_completed": c, "images_total": t}
-                    )
-                )
+                progress_callback=image_progress
             )
 
             # 8. Mixar áudio
