@@ -159,24 +159,31 @@ async def _run_video_generation(
     Background task para executar a geração de vídeo.
     """
     import json
+    import logging
+    import traceback
     from pathlib import Path
     from ..services.job_orchestrator import JobOrchestrator
     from ..services.history_service import get_history_service
     from ..models.job import JobStatus
     from ..models.history import VideoHistoryCreate
 
+    logger = logging.getLogger(__name__)
+
     def status_callback(status: JobStatus):
-        """Update job status in memory."""
-        if job_id in _jobs_db:
-            _jobs_db[job_id].update({
-                "status": status.status.value,
-                "progress": status.progress,
-                "current_step": status.current_step,
-                "updated_at": status.updated_at.isoformat(),
-                "error": status.error,
-                "details": status.details,
-                "logs": status.logs
-            })
+        """Update job status in memory - com proteção contra erros."""
+        try:
+            if job_id in _jobs_db:
+                _jobs_db[job_id].update({
+                    "status": status.status.value,
+                    "progress": status.progress,
+                    "current_step": status.current_step,
+                    "updated_at": status.updated_at.isoformat(),
+                    "error": status.error,
+                    "details": status.details,
+                    "logs": status.logs[-100:] if status.logs else []  # Limitar logs
+                })
+        except Exception as e:
+            logger.error(f"Error in status_callback: {e}")
 
     try:
         # Load config
@@ -247,17 +254,23 @@ async def _run_video_generation(
                 resolution=resolution
             ))
         except Exception as hist_error:
-            # Log but don't fail the job
-            import logging
-            logging.error(f"Failed to save video to history: {hist_error}")
+            logger.error(f"Failed to save video to history: {hist_error}")
 
     except Exception as e:
-        # Update job as failed
-        _jobs_db[job_id].update({
-            "status": JobStatusEnum.FAILED.value,
-            "error": str(e),
-            "completed_at": datetime.now().isoformat()
-        })
+        # Log the full traceback for debugging
+        error_msg = str(e)[:500]  # Limitar tamanho do erro
+        logger.error(f"Video generation failed for job {job_id}: {error_msg}")
+        logger.error(traceback.format_exc())
+
+        # Update job as failed - com try/except para garantir que não falhe
+        try:
+            _jobs_db[job_id].update({
+                "status": JobStatusEnum.FAILED.value,
+                "error": error_msg,
+                "completed_at": datetime.now().isoformat()
+            })
+        except Exception as update_error:
+            logger.error(f"Failed to update job status: {update_error}")
 
 
 def get_job(job_id: str) -> Optional[Dict]:
