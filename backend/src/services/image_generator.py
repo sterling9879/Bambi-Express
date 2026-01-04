@@ -36,6 +36,7 @@ class WaveSpeedGenerator:
     - Retry de imagens falhas no final
     - Suporte a múltiplos modelos (schnell, dev)
     - Resolução configurável
+    - Connection pooling para evitar exaustão de recursos
     """
 
     BASE_URL = "https://api.wavespeed.ai/api/v3"
@@ -56,12 +57,44 @@ class WaveSpeedGenerator:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.log_callback = log_callback
+        self._client: Optional[httpx.AsyncClient] = None
 
     def _log(self, message: str):
         """Log message to both logger and callback if set."""
         logger.info(message)
         if self.log_callback:
             self.log_callback(message)
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Retorna cliente HTTP compartilhado com connection pooling."""
+        if self._client is None or self._client.is_closed:
+            # Limites de conexão para evitar exaustão de recursos
+            limits = httpx.Limits(
+                max_keepalive_connections=10,
+                max_connections=20,
+                keepalive_expiry=30.0
+            )
+            timeout = httpx.Timeout(
+                connect=30.0,
+                read=120.0,
+                write=30.0,
+                pool=60.0
+            )
+            self._client = httpx.AsyncClient(
+                limits=limits,
+                timeout=timeout,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                }
+            )
+        return self._client
+
+    async def _close_client(self):
+        """Fecha o cliente HTTP."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     async def generate_all(
         self,
@@ -88,76 +121,86 @@ class WaveSpeedGenerator:
         completed = 0
         total = len(scenes)
 
-        async def generate_with_semaphore(scene: Scene) -> None:
-            nonlocal completed
-            async with semaphore:
-                try:
-                    # Pequeno delay aleatório para evitar rate limiting
-                    await asyncio.sleep(random.uniform(0.1, 0.5))
+        try:
+            # Inicializar cliente HTTP compartilhado
+            await self._get_client()
+            self._log(f"HTTP client initialized with connection pooling")
 
-                    result = await self._generate_with_retries(scene)
-                    if result:
-                        results[scene.scene_index] = result
-                    else:
+            async def generate_with_semaphore(scene: Scene) -> None:
+                nonlocal completed
+                async with semaphore:
+                    try:
+                        # Pequeno delay aleatório para evitar rate limiting
+                        await asyncio.sleep(random.uniform(0.1, 0.5))
+
+                        result = await self._generate_with_retries(scene)
+                        if result:
+                            results[scene.scene_index] = result
+                        else:
+                            failed_scenes.append(scene)
+                    except Exception as e:
+                        # Captura qualquer erro não tratado
+                        self._log(f"ERROR: Unexpected error generating scene {scene.scene_index}: {e}")
                         failed_scenes.append(scene)
-                except Exception as e:
-                    # Captura qualquer erro não tratado
-                    self._log(f"ERROR: Unexpected error generating scene {scene.scene_index}: {e}")
-                    failed_scenes.append(scene)
-                finally:
-                    completed += 1
-                    if progress_callback:
-                        progress_callback(completed, total)
+                    finally:
+                        completed += 1
+                        if progress_callback:
+                            progress_callback(completed, total)
 
-        # Primeira rodada de geração
-        tasks = [generate_with_semaphore(scene) for scene in scenes]
-        await asyncio.gather(*tasks, return_exceptions=True)
+            # Primeira rodada de geração
+            tasks = [generate_with_semaphore(scene) for scene in scenes]
+            await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Segunda rodada: tentar novamente as que falharam
-        if failed_scenes:
-            self._log(f"Retrying {len(failed_scenes)} failed images...")
-            await asyncio.sleep(5)  # Esperar um pouco antes de retentar
+            # Segunda rodada: tentar novamente as que falharam
+            if failed_scenes:
+                self._log(f"Retrying {len(failed_scenes)} failed images...")
+                await asyncio.sleep(5)  # Esperar um pouco antes de retentar
 
-            for scene in failed_scenes.copy():
-                try:
-                    result = await self._generate_with_retries(scene, is_retry=True)
-                    if result:
-                        results[scene.scene_index] = result
-                        failed_scenes.remove(scene)
-                        self._log(f"Successfully generated scene {scene.scene_index} on retry")
-                except Exception as e:
-                    self._log(f"WARNING: Retry failed for scene {scene.scene_index}: {e}")
+                for scene in failed_scenes.copy():
+                    try:
+                        result = await self._generate_with_retries(scene, is_retry=True)
+                        if result:
+                            results[scene.scene_index] = result
+                            failed_scenes.remove(scene)
+                            self._log(f"Successfully generated scene {scene.scene_index} on retry")
+                    except Exception as e:
+                        self._log(f"WARNING: Retry failed for scene {scene.scene_index}: {e}")
 
-        # Terceira rodada: última tentativa com delay maior
-        if failed_scenes:
-            self._log(f"Final retry for {len(failed_scenes)} remaining failed images...")
-            await asyncio.sleep(10)
+            # Terceira rodada: última tentativa com delay maior
+            if failed_scenes:
+                self._log(f"Final retry for {len(failed_scenes)} remaining failed images...")
+                await asyncio.sleep(10)
 
-            for scene in failed_scenes.copy():
-                try:
-                    result = await self._generate_with_retries(scene, is_retry=True, max_attempts=3)
-                    if result:
-                        results[scene.scene_index] = result
-                        failed_scenes.remove(scene)
-                        self._log(f"Successfully generated scene {scene.scene_index} on final retry")
-                except Exception as e:
-                    self._log(f"WARNING: Final retry failed for scene {scene.scene_index}: {e}")
+                for scene in failed_scenes.copy():
+                    try:
+                        result = await self._generate_with_retries(scene, is_retry=True, max_attempts=3)
+                        if result:
+                            results[scene.scene_index] = result
+                            failed_scenes.remove(scene)
+                            self._log(f"Successfully generated scene {scene.scene_index} on final retry")
+                    except Exception as e:
+                        self._log(f"WARNING: Final retry failed for scene {scene.scene_index}: {e}")
 
-        # Criar placeholders para as que ainda falharam
-        if failed_scenes:
-            self._log(f"WARNING: Creating placeholders for {len(failed_scenes)} scenes that failed all retries")
-            for scene in failed_scenes:
-                try:
-                    results[scene.scene_index] = await self._create_placeholder_image(scene)
-                except Exception as e:
-                    self._log(f"ERROR: Could not create placeholder for scene {scene.scene_index}: {e}")
-                    # Criar um resultado mínimo para não quebrar o vídeo
-                    results[scene.scene_index] = GeneratedImage(
-                        scene_index=scene.scene_index,
-                        image_path="",  # Vazio - video_composer vai lidar
-                        prompt_used=f"[FAILED] {scene.image_prompt[:50]}...",
-                        generation_time_ms=0
-                    )
+            # Criar placeholders para as que ainda falharam
+            if failed_scenes:
+                self._log(f"WARNING: Creating placeholders for {len(failed_scenes)} scenes that failed all retries")
+                for scene in failed_scenes:
+                    try:
+                        results[scene.scene_index] = await self._create_placeholder_image(scene)
+                    except Exception as e:
+                        self._log(f"ERROR: Could not create placeholder for scene {scene.scene_index}: {e}")
+                        # Criar um resultado mínimo para não quebrar o vídeo
+                        results[scene.scene_index] = GeneratedImage(
+                            scene_index=scene.scene_index,
+                            image_path="",  # Vazio - video_composer vai lidar
+                            prompt_used=f"[FAILED] {scene.image_prompt[:50]}...",
+                            generation_time_ms=0
+                        )
+
+        finally:
+            # SEMPRE fechar o cliente HTTP para liberar conexões
+            await self._close_client()
+            self._log(f"HTTP client closed, connections released")
 
         # Ordenar por índice de cena
         return [results[i] for i in sorted(results.keys())]
@@ -249,99 +292,96 @@ class WaveSpeedGenerator:
         )
 
     async def _generate_image(self, scene: Scene) -> GeneratedImage:
-        """Gera imagem para uma única cena."""
+        """Gera imagem para uma única cena usando cliente compartilhado."""
         start_time = time.time()
 
         self._log(f"Generating image for scene {scene.scene_index}...")
 
         try:
-            async with httpx.AsyncClient(timeout=180) as client:
-                # Iniciar geração
-                response = await client.post(
-                    f"{self.BASE_URL}/wavespeed-ai/{self.model}",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "prompt": scene.image_prompt,
-                        "size": f"{self.width}*{self.height}",
-                        "num_images": 1,
-                        "enable_base64_output": False,
-                        "enable_sync_mode": False,
-                        "guidance_scale": 3.5,
-                        "num_inference_steps": 28,
-                        "output_format": "png",
-                        "seed": -1,
-                        "strength": 0.8
-                    }
-                )
+            client = await self._get_client()
 
-                # Erros que NÃO devem ser retentados
-                if response.status_code == 401:
-                    raise NonRetryableError("WaveSpeed API: Chave de API inválida ou expirada")
-                elif response.status_code == 402:
-                    raise NonRetryableError("WaveSpeed API: Créditos insuficientes")
-                # Erros que DEVEM ser retentados
-                elif response.status_code == 429:
-                    raise RetryableError("WaveSpeed API: Limite de requisições excedido, aguarde um momento")
-                elif response.status_code >= 500:
-                    # Erros de servidor - sempre retentar
-                    error_detail = response.text[:200] if response.text else "Server error"
-                    raise RetryableError(f"WaveSpeed API erro {response.status_code}: {error_detail}")
-                elif response.status_code >= 400:
-                    # Outros erros 4xx - retentar por segurança
-                    error_detail = response.text[:200] if response.text else "Client error"
-                    raise RetryableError(f"WaveSpeed API erro {response.status_code}: {error_detail}")
+            # Iniciar geração
+            response = await client.post(
+                f"{self.BASE_URL}/wavespeed-ai/{self.model}",
+                json={
+                    "prompt": scene.image_prompt,
+                    "size": f"{self.width}*{self.height}",
+                    "num_images": 1,
+                    "enable_base64_output": False,
+                    "enable_sync_mode": False,
+                    "guidance_scale": 3.5,
+                    "num_inference_steps": 28,
+                    "output_format": "png",
+                    "seed": -1,
+                    "strength": 0.8
+                }
+            )
 
-                data = response.json()
+            # Erros que NÃO devem ser retentados
+            if response.status_code == 401:
+                raise NonRetryableError("WaveSpeed API: Chave de API inválida ou expirada")
+            elif response.status_code == 402:
+                raise NonRetryableError("WaveSpeed API: Créditos insuficientes")
+            # Erros que DEVEM ser retentados
+            elif response.status_code == 429:
+                raise RetryableError("WaveSpeed API: Limite de requisições excedido, aguarde um momento")
+            elif response.status_code >= 500:
+                # Erros de servidor - sempre retentar
+                error_detail = response.text[:200] if response.text else "Server error"
+                raise RetryableError(f"WaveSpeed API erro {response.status_code}: {error_detail}")
+            elif response.status_code >= 400:
+                # Outros erros 4xx - retentar por segurança
+                error_detail = response.text[:200] if response.text else "Client error"
+                raise RetryableError(f"WaveSpeed API erro {response.status_code}: {error_detail}")
 
-                # Check response format and get image URL
-                if "data" in data and "id" in data["data"]:
-                    # Async mode - need to poll for result
-                    request_id = data["data"]["id"]
-                    poll_url = data["data"]["urls"]["get"]
-                    image_url = await self._poll_for_result(client, request_id, poll_url)
-                elif "data" in data and "outputs" in data["data"] and data["data"]["outputs"]:
-                    # Sync mode - result available immediately
-                    image_url = data["data"]["outputs"][0]
-                elif "requestId" in data:
-                    # Legacy format
-                    request_id = data["requestId"]
-                    image_url = await self._poll_for_result(client, request_id)
-                elif "images" in data:
-                    image_url = data["images"][0]["url"]
-                elif "output" in data and "images" in data["output"]:
-                    image_url = data["output"]["images"][0]
-                else:
-                    raise ValueError(f"Formato de resposta inesperado: {data}")
+            data = response.json()
 
-                # Baixar imagem
-                image_response = await client.get(image_url)
-                image_response.raise_for_status()
+            # Check response format and get image URL
+            if "data" in data and "id" in data["data"]:
+                # Async mode - need to poll for result
+                request_id = data["data"]["id"]
+                poll_url = data["data"]["urls"]["get"]
+                image_url = await self._poll_for_result(client, request_id, poll_url)
+            elif "data" in data and "outputs" in data["data"] and data["data"]["outputs"]:
+                # Sync mode - result available immediately
+                image_url = data["data"]["outputs"][0]
+            elif "requestId" in data:
+                # Legacy format
+                request_id = data["requestId"]
+                image_url = await self._poll_for_result(client, request_id)
+            elif "images" in data:
+                image_url = data["images"][0]["url"]
+            elif "output" in data and "images" in data["output"]:
+                image_url = data["output"]["images"][0]
+            else:
+                raise ValueError(f"Formato de resposta inesperado: {data}")
 
-                # Salvar
-                output_path = self.output_dir / f"scene_{scene.scene_index}.png"
-                output_path.write_bytes(image_response.content)
+            # Baixar imagem
+            image_response = await client.get(image_url)
+            image_response.raise_for_status()
 
-                generation_time = int((time.time() - start_time) * 1000)
+            # Salvar
+            output_path = self.output_dir / f"scene_{scene.scene_index}.png"
+            output_path.write_bytes(image_response.content)
 
-                self._log(f"Generated image for scene {scene.scene_index} in {generation_time}ms")
+            generation_time = int((time.time() - start_time) * 1000)
 
-                return GeneratedImage(
-                    scene_index=scene.scene_index,
-                    image_path=str(output_path),
-                    prompt_used=scene.image_prompt,
-                    generation_time_ms=generation_time
-                )
+            self._log(f"Generated image for scene {scene.scene_index} in {generation_time}ms")
+
+            return GeneratedImage(
+                scene_index=scene.scene_index,
+                image_path=str(output_path),
+                prompt_used=scene.image_prompt,
+                generation_time_ms=generation_time
+            )
 
         except (NonRetryableError, RetryableError):
             # Re-raise para ser tratado pelo caller
             raise
         except httpx.HTTPStatusError as e:
             raise RetryableError(f"Erro HTTP na geração de imagem: {e.response.status_code}")
-        except httpx.TimeoutException as e:
-            raise RetryableError(f"Timeout na geração de imagem")
+        except httpx.TimeoutException:
+            raise RetryableError("Timeout na geração de imagem")
         except httpx.RequestError as e:
             raise RetryableError(f"Erro de conexão com WaveSpeed API: {str(e)}")
         except Exception as e:
@@ -358,10 +398,8 @@ class WaveSpeedGenerator:
         url = poll_url or f"{self.BASE_URL}/predictions/{request_id}/result"
 
         for attempt in range(max_attempts):
-            response = await client.get(
-                url,
-                headers={"Authorization": f"Bearer {self.api_key}"}
-            )
+            # Headers já configurados no cliente compartilhado
+            response = await client.get(url)
             response.raise_for_status()
 
             data = response.json()
