@@ -202,8 +202,23 @@ class WaveSpeedGenerator:
             await self._close_client()
             self._log(f"HTTP client closed, connections released")
 
-        # Ordenar por índice de cena
-        return [results[i] for i in sorted(results.keys())]
+        # Ordenar por índice de cena e garantir que não falta nenhuma
+        # Se faltar alguma cena por algum bug, criar placeholder
+        final_results = []
+        for scene in scenes:
+            if scene.scene_index in results:
+                final_results.append(results[scene.scene_index])
+            else:
+                # Cena faltando - criar resultado mínimo
+                self._log(f"WARNING: Scene {scene.scene_index} missing from results, creating empty entry")
+                final_results.append(GeneratedImage(
+                    scene_index=scene.scene_index,
+                    image_path="",
+                    prompt_used=f"[MISSING] {scene.image_prompt[:50]}...",
+                    generation_time_ms=0
+                ))
+
+        return final_results
 
     async def _generate_with_retries(
         self,
