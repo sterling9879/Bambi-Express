@@ -119,11 +119,14 @@ class WaveSpeedGenerator:
             await asyncio.sleep(5)  # Esperar um pouco antes de retentar
 
             for scene in failed_scenes.copy():
-                result = await self._generate_with_retries(scene, is_retry=True)
-                if result:
-                    results[scene.scene_index] = result
-                    failed_scenes.remove(scene)
-                    self._log(f"Successfully generated scene {scene.scene_index} on retry")
+                try:
+                    result = await self._generate_with_retries(scene, is_retry=True)
+                    if result:
+                        results[scene.scene_index] = result
+                        failed_scenes.remove(scene)
+                        self._log(f"Successfully generated scene {scene.scene_index} on retry")
+                except Exception as e:
+                    self._log(f"WARNING: Retry failed for scene {scene.scene_index}: {e}")
 
         # Terceira rodada: última tentativa com delay maior
         if failed_scenes:
@@ -131,17 +134,30 @@ class WaveSpeedGenerator:
             await asyncio.sleep(10)
 
             for scene in failed_scenes.copy():
-                result = await self._generate_with_retries(scene, is_retry=True, max_attempts=3)
-                if result:
-                    results[scene.scene_index] = result
-                    failed_scenes.remove(scene)
-                    self._log(f"Successfully generated scene {scene.scene_index} on final retry")
+                try:
+                    result = await self._generate_with_retries(scene, is_retry=True, max_attempts=3)
+                    if result:
+                        results[scene.scene_index] = result
+                        failed_scenes.remove(scene)
+                        self._log(f"Successfully generated scene {scene.scene_index} on final retry")
+                except Exception as e:
+                    self._log(f"WARNING: Final retry failed for scene {scene.scene_index}: {e}")
 
         # Criar placeholders para as que ainda falharam
         if failed_scenes:
             self._log(f"WARNING: Creating placeholders for {len(failed_scenes)} scenes that failed all retries")
             for scene in failed_scenes:
-                results[scene.scene_index] = await self._create_placeholder_image(scene)
+                try:
+                    results[scene.scene_index] = await self._create_placeholder_image(scene)
+                except Exception as e:
+                    self._log(f"ERROR: Could not create placeholder for scene {scene.scene_index}: {e}")
+                    # Criar um resultado mínimo para não quebrar o vídeo
+                    results[scene.scene_index] = GeneratedImage(
+                        scene_index=scene.scene_index,
+                        image_path="",  # Vazio - video_composer vai lidar
+                        prompt_used=f"[FAILED] {scene.image_prompt[:50]}...",
+                        generation_time_ms=0
+                    )
 
         # Ordenar por índice de cena
         return [results[i] for i in sorted(results.keys())]

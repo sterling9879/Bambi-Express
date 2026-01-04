@@ -7,11 +7,25 @@ import random
 from pathlib import Path
 from typing import List, Optional, Callable
 import logging
+import os
 
 from ..models.video import Scene, GeneratedImage, VideoResult
 from ..models.config import FFmpegConfig
 
 logger = logging.getLogger(__name__)
+
+# Cores de fallback baseadas no mood
+MOOD_COLORS = {
+    "alegre": "0xFFDF80",
+    "animado": "0xFFA54F",
+    "calmo": "0x87CEEB",
+    "dramatico": "0x464664",
+    "inspirador": "0xFFD700",
+    "melancolico": "0x696987",
+    "neutro": "0x646464",
+    "epico": "0x8B4513",
+    "suspense": "0x2F2F3D",
+}
 
 
 class VideoComposer:
@@ -145,14 +159,29 @@ class VideoComposer:
         # Build a simpler approach: create each scene as input, then concat
         inputs = []
         filter_parts = []
+        color_inputs = []  # Track which inputs are color sources
 
         # Add image inputs with loop for duration
         for i, (img, duration) in enumerate(zip(images, durations)):
-            inputs.extend([
-                "-loop", "1",
-                "-t", str(duration),
-                "-i", img.image_path
-            ])
+            # Check if image exists
+            if img.image_path and os.path.exists(img.image_path):
+                inputs.extend([
+                    "-loop", "1",
+                    "-t", str(duration),
+                    "-i", img.image_path
+                ])
+                color_inputs.append(False)
+            else:
+                # Use color source as fallback
+                scene_mood = scenes[i].mood if i < len(scenes) else "neutro"
+                color = MOOD_COLORS.get(scene_mood, "0x646464")
+                logger.warning(f"Scene {i} missing image, using color {color} for mood '{scene_mood}'")
+                inputs.extend([
+                    "-f", "lavfi",
+                    "-t", str(duration),
+                    "-i", f"color=c={color}:s={width}x{height}:r={cfg.fps}"
+                ])
+                color_inputs.append(True)
 
         # Add audio input
         audio_index = len(images)
@@ -166,14 +195,16 @@ class VideoComposer:
             # Build filter for this image
             filters = []
 
-            # Scale and pad to exact resolution
-            filters.append(
-                f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
-                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black"
-            )
+            # Scale and pad to exact resolution (skip for color inputs - already correct size)
+            is_color_input = color_inputs[i] if i < len(color_inputs) else False
+            if not is_color_input:
+                filters.append(
+                    f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                    f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black"
+                )
 
-            # Apply Ken Burns if enabled
-            if cfg.effects.ken_burns.enabled:
+            # Apply Ken Burns if enabled (skip for color inputs)
+            if cfg.effects.ken_burns.enabled and not is_color_input:
                 direction = self._get_ken_burns_direction(i)
                 intensity = cfg.effects.ken_burns.intensity
                 frames = int(duration * cfg.fps)
