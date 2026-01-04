@@ -115,6 +115,11 @@ class WaveSpeedGenerator:
         Returns:
             Lista de GeneratedImage (inclui placeholders para falhas)
         """
+        # Para muitas cenas, reduzir concorrência para não sobrecarregar CPU
+        if len(scenes) > 50:
+            max_concurrent = min(max_concurrent, 2)
+            self._log(f"Reduced concurrency to {max_concurrent} for {len(scenes)} scenes")
+
         semaphore = asyncio.Semaphore(max_concurrent)
         results: dict[int, GeneratedImage] = {}
         failed_scenes: List[Scene] = []
@@ -146,6 +151,9 @@ class WaveSpeedGenerator:
                         completed += 1
                         if progress_callback:
                             progress_callback(completed, total)
+                        # Yield control ao event loop para permitir que outras tarefas rodem
+                        # (como responder requisições de status)
+                        await asyncio.sleep(0)
 
             # Primeira rodada de geração
             tasks = [generate_with_semaphore(scene) for scene in scenes]

@@ -385,6 +385,9 @@ class JobOrchestrator:
             except Exception as e:
                 logger.warning(f"Status callback error: {e}")
 
+        # Yield control ao event loop para permitir que outras requisições sejam processadas
+        await asyncio.sleep(0)
+
     def _cleanup_temp_dir(self, temp_dir: Path):
         """Remove arquivos temporários após processamento."""
         try:
