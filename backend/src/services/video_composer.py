@@ -39,11 +39,11 @@ MOOD_COLORS = {
 }
 
 # Configurações de processamento
-BATCH_SIZE = 15  # Cenas por lote (evita filter_complex muito grande)
-MAX_SCENES_FOR_KEN_BURNS = 300  # Ken Burns funciona bem com batch processing
+BATCH_SIZE = 10  # Cenas por lote (reduzido para processar mais rápido)
+MAX_SCENES_FOR_KEN_BURNS = 80  # Limite reduzido - zoompan é muito pesado para CPU
 MAX_SCENES_FOR_TRANSITIONS = 500  # Transições funcionam bem com batch processing
 FFMPEG_THREADS = 2  # Limitar threads para evitar OOM
-TIMEOUT_PER_SCENE = 10  # Segundos de timeout por cena
+TIMEOUT_PER_SCENE = 45  # Segundos de timeout por cena (zoompan é muito pesado)
 
 
 class VideoComposer:
@@ -443,7 +443,7 @@ class VideoComposer:
             str(output_path)
         ]
 
-        self._run_ffmpeg(cmd, "concat_simple", timeout=300)
+        self._run_ffmpeg(cmd, "concat_simple", timeout=450)
 
     def _get_video_duration(self, video_path: Path) -> float:
         """Obtém duração do vídeo usando ffprobe."""
