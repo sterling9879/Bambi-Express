@@ -46,6 +46,11 @@ FFMPEG_THREADS = 2  # Limitar threads para evitar OOM
 TIMEOUT_PER_SCENE = 45  # Segundos de timeout por cena (zoompan é muito pesado)
 
 
+def _to_absolute_path(path: str) -> str:
+    """Converte qualquer caminho para absoluto."""
+    return str(Path(path).resolve())
+
+
 class VideoComposer:
     """
     Compõe vídeo final usando FFMPEG.
@@ -61,7 +66,7 @@ class VideoComposer:
 
     def __init__(self, config: FFmpegConfig, output_dir: str = "output"):
         self.config = config
-        self.output_dir = Path(output_dir)
+        self.output_dir = Path(output_dir).resolve()  # Sempre usar caminho absoluto
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._temp_files: List[Path] = []  # Track temp files for cleanup
 
@@ -79,11 +84,18 @@ class VideoComposer:
         Para vídeos longos (>BATCH_SIZE cenas), usa processamento em lotes
         para evitar que o filter_complex do FFMPEG fique muito grande.
         """
-        output_path = self.output_dir / output_filename
+        output_path = (self.output_dir / output_filename).resolve()
+        audio_path_abs = _to_absolute_path(audio_path)
         self._temp_files = []
 
         try:
             logger.info(f"Composing video with {len(scenes)} scenes and {len(images)} images")
+            logger.info(f"Output path: {output_path}")
+            logger.info(f"Audio path: {audio_path_abs}")
+
+            # Verificar que o áudio existe
+            if not Path(audio_path_abs).exists():
+                raise RuntimeError(f"Audio file not found: {audio_path_abs}")
 
             # Determinar modo de processamento baseado na quantidade de cenas
             use_ken_burns = len(scenes) <= MAX_SCENES_FOR_KEN_BURNS and self.config.effects.ken_burns.enabled
@@ -122,11 +134,11 @@ class VideoComposer:
                     use_transitions=use_transitions
                 )
                 # Adicionar áudio ao vídeo final
-                self._add_audio_to_video(video_only_path, audio_path, output_path)
+                self._add_audio_to_video(video_only_path, audio_path_abs, output_path)
             else:
                 # Processamento normal para vídeos curtos
                 self._compose_single_pass(
-                    scenes, sorted_images, durations, audio_path, output_path,
+                    scenes, sorted_images, durations, audio_path_abs, output_path,
                     use_ken_burns=use_ken_burns,
                     use_transitions=use_transitions
                 )
@@ -178,7 +190,7 @@ class VideoComposer:
         """
         Processa vídeo em lotes para evitar filter_complex muito grande.
         """
-        temp_dir = output_path.parent / f"batch_temp_{output_path.stem}"
+        temp_dir = (output_path.parent / f"batch_temp_{output_path.stem}").resolve()
         temp_dir.mkdir(parents=True, exist_ok=True)
         self._temp_files.append(temp_dir)
 
@@ -195,7 +207,7 @@ class VideoComposer:
 
             logger.info(f"Processing batch {batch_idx + 1}/{num_batches} (scenes {start_idx}-{end_idx - 1})")
 
-            batch_output = temp_dir / f"batch_{batch_idx:03d}.mp4"
+            batch_output = (temp_dir / f"batch_{batch_idx:03d}.mp4").resolve()
 
             # Gerar vídeo do lote (sem áudio)
             self._compose_batch(
@@ -207,14 +219,20 @@ class VideoComposer:
                 use_transitions=use_transitions
             )
 
+            # Verificar que o arquivo foi criado e tem tamanho válido
             if not batch_output.exists():
-                raise RuntimeError(f"Batch {batch_idx} failed to create output file")
+                raise RuntimeError(f"Batch {batch_idx} failed to create output file at {batch_output}")
 
+            file_size = batch_output.stat().st_size
+            if file_size < 1000:
+                raise RuntimeError(f"Batch {batch_idx} file too small ({file_size} bytes)")
+
+            logger.info(f"Batch {batch_idx} created: {batch_output} ({file_size / 1024:.1f}KB)")
             batch_videos.append(batch_output)
 
         # Concatenar todos os lotes com transição suave
         logger.info(f"Concatenating {len(batch_videos)} batch videos...")
-        video_only_path = output_path.parent / f"video_only_{output_path.stem}.mp4"
+        video_only_path = (output_path.parent / f"video_only_{output_path.stem}.mp4").resolve()
         self._temp_files.append(video_only_path)
 
         self._concat_videos_with_fade(batch_videos, video_only_path)
@@ -242,11 +260,23 @@ class VideoComposer:
         filter_parts = []
         color_inputs = []
 
-        # Add image inputs
+        # Add image inputs - SEMPRE usar caminhos absolutos
         for i, (img, duration) in enumerate(zip(images, durations)):
-            if img.image_path and os.path.exists(img.image_path):
-                inputs.extend(["-loop", "1", "-t", str(duration), "-i", img.image_path])
-                color_inputs.append(False)
+            if img.image_path:
+                abs_image_path = _to_absolute_path(img.image_path)
+                if os.path.exists(abs_image_path):
+                    inputs.extend(["-loop", "1", "-t", str(duration), "-i", abs_image_path])
+                    color_inputs.append(False)
+                else:
+                    logger.warning(f"Image not found: {abs_image_path}, using color fallback")
+                    scene_mood = scenes[i].mood if i < len(scenes) else "neutro"
+                    color = MOOD_COLORS.get(scene_mood, "0x646464")
+                    inputs.extend([
+                        "-f", "lavfi",
+                        "-t", str(duration),
+                        "-i", f"color=c={color}:s={width}x{height}:r={cfg.fps}"
+                    ])
+                    color_inputs.append(True)
             else:
                 scene_mood = scenes[i].mood if i < len(scenes) else "neutro"
                 color = MOOD_COLORS.get(scene_mood, "0x646464")
@@ -361,7 +391,7 @@ class VideoComposer:
             str(output_path)
         ]
 
-        timeout = max(300, len(scenes) * TIMEOUT_PER_SCENE)
+        timeout = max(450, len(scenes) * TIMEOUT_PER_SCENE)
         self._run_ffmpeg(cmd, f"batch_{batch_index:03d}", timeout=timeout)
 
     def _concat_videos_with_fade(self, video_paths: List[Path], output_path: Path):
@@ -381,14 +411,16 @@ class VideoComposer:
         """Concatena com crossfade entre batches."""
         fade_duration = 0.3
 
+        # IMPORTANTE: Usar caminhos absolutos
         inputs = []
         for vp in video_paths:
-            inputs.extend(["-i", str(vp)])
+            abs_path = str(vp.resolve())
+            inputs.extend(["-i", abs_path])
 
         # Obter duração de cada vídeo
         durations = []
         for vp in video_paths:
-            dur = self._get_video_duration(vp)
+            dur = self._get_video_duration(vp.resolve())
             durations.append(dur)
 
         # Construir filter para xfade entre todos
@@ -418,47 +450,55 @@ class VideoComposer:
             "-preset", self.config.preset,
             "-crf", str(self.config.crf),
             "-pix_fmt", "yuv420p",
-            str(output_path)
+            str(output_path.resolve())
         ]
 
-        self._run_ffmpeg(cmd, "concat_xfade", timeout=600)
+        # Timeout maior para concat com xfade (re-encode)
+        timeout = max(600, len(video_paths) * 120)
+        self._run_ffmpeg(cmd, "concat_xfade", timeout=timeout)
 
     def _concat_simple(self, video_paths: List[Path], output_path: Path):
         """Concatena usando concat demuxer (mais rápido para muitos vídeos)."""
-        list_file = output_path.parent / f"concat_list_{output_path.stem}.txt"
+        list_file = (output_path.parent / f"concat_list_{output_path.stem}.txt").resolve()
         self._temp_files.append(list_file)
 
-        # Verificar que todos os arquivos existem antes de concatenar
-        missing_files = []
-        for video_path in video_paths:
+        # Verificar que todos os arquivos existem e têm tamanho válido
+        logger.info(f"Verifying {len(video_paths)} batch files before concatenation...")
+        for idx, video_path in enumerate(video_paths):
             abs_path = video_path.resolve()
             if not abs_path.exists():
-                missing_files.append(str(abs_path))
+                raise RuntimeError(f"Batch file {idx} not found: {abs_path}")
+            file_size = abs_path.stat().st_size
+            if file_size < 1000:
+                raise RuntimeError(f"Batch file {idx} too small ({file_size} bytes): {abs_path}")
+            logger.debug(f"Verified batch {idx}: {abs_path} ({file_size} bytes)")
 
-        if missing_files:
-            logger.error(f"Missing batch files: {missing_files[:5]}...")
-            raise RuntimeError(f"Missing {len(missing_files)} batch files for concat")
-
-        with open(list_file, "w") as f:
+        # Criar arquivo de lista para concat demuxer
+        with open(list_file, "w", encoding="utf-8") as f:
             for video_path in video_paths:
-                # Usar caminho absoluto para evitar "No such file or directory"
-                abs_path = video_path.resolve()
-                escaped_path = str(abs_path).replace("'", "'\\''")
+                # Usar caminho absoluto e escapar aspas simples
+                abs_path = str(video_path.resolve())
+                # Para o concat demuxer, usar escape correto
+                escaped_path = abs_path.replace("'", "'\\''")
                 f.write(f"file '{escaped_path}'\n")
 
-        logger.info(f"Concat list created with {len(video_paths)} files at {list_file}")
+        # Log do conteúdo do arquivo de lista para debug
+        logger.info(f"Concat list file created: {list_file}")
+        with open(list_file, "r") as f:
+            content = f.read()
+            logger.debug(f"Concat list content:\n{content}")
 
         cmd = [
             "ffmpeg", "-y",
             "-threads", str(FFMPEG_THREADS),
             "-f", "concat",
             "-safe", "0",
-            "-i", str(list_file.resolve()),  # Também usar caminho absoluto aqui
+            "-i", str(list_file),
             "-c", "copy",
             str(output_path.resolve())
         ]
 
-        self._run_ffmpeg(cmd, "concat_simple", timeout=450)
+        self._run_ffmpeg(cmd, "concat_simple", timeout=600)
 
     def _get_video_duration(self, video_path: Path) -> float:
         """Obtém duração do vídeo usando ffprobe."""
@@ -468,13 +508,15 @@ class VideoComposer:
                     "ffprobe", "-v", "error",
                     "-show_entries", "format=duration",
                     "-of", "default=noprint_wrappers=1:nokey=1",
-                    str(video_path)
+                    str(video_path.resolve())
                 ],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
-            return float(result.stdout.strip())
+            duration = float(result.stdout.strip())
+            logger.debug(f"Video duration for {video_path.name}: {duration:.2f}s")
+            return duration
         except Exception as e:
             logger.warning(f"Failed to get duration for {video_path}: {e}")
             return 60.0  # Fallback
@@ -483,11 +525,27 @@ class VideoComposer:
         """Adiciona áudio ao vídeo final."""
         cfg = self.config
 
+        # Garantir caminhos absolutos
+        video_path_abs = _to_absolute_path(video_path)
+        audio_path_abs = _to_absolute_path(audio_path)
+        output_path_abs = str(output_path.resolve())
+
+        logger.info(f"Adding audio to video:")
+        logger.info(f"  Video: {video_path_abs}")
+        logger.info(f"  Audio: {audio_path_abs}")
+        logger.info(f"  Output: {output_path_abs}")
+
+        # Verificar que os arquivos existem
+        if not Path(video_path_abs).exists():
+            raise RuntimeError(f"Video file not found: {video_path_abs}")
+        if not Path(audio_path_abs).exists():
+            raise RuntimeError(f"Audio file not found: {audio_path_abs}")
+
         cmd = [
             "ffmpeg", "-y",
             "-threads", str(FFMPEG_THREADS),
-            "-i", video_path,
-            "-i", audio_path,
+            "-i", video_path_abs,
+            "-i", audio_path_abs,
             "-c:v", "copy",
             "-c:a", "aac" if cfg.audio.codec == "aac" else "libmp3lame",
             "-b:a", f"{cfg.audio.bitrate}k",
@@ -500,7 +558,7 @@ class VideoComposer:
         if cfg.audio.normalize:
             cmd.extend(["-af", f"loudnorm=I={cfg.audio.target_lufs}:TP=-1.5:LRA=11"])
 
-        cmd.append(str(output_path))
+        cmd.append(output_path_abs)
 
         self._run_ffmpeg(cmd, "add_audio", timeout=600)
 
@@ -520,7 +578,7 @@ class VideoComposer:
             use_ken_burns=use_ken_burns,
             use_transitions=use_transitions
         )
-        timeout = max(300, len(scenes) * TIMEOUT_PER_SCENE)
+        timeout = max(450, len(scenes) * TIMEOUT_PER_SCENE)
         self._run_ffmpeg(cmd, "compose_single", timeout=timeout)
 
     def _run_ffmpeg(self, cmd: List[str], operation: str, timeout: int = 600):
@@ -637,19 +695,35 @@ class VideoComposer:
         width = cfg.resolution.width
         height = cfg.resolution.height
 
+        # Garantir caminhos absolutos
+        audio_path_abs = _to_absolute_path(audio_path)
+        output_path_abs = str(output_path.resolve())
+
         inputs = []
         filter_parts = []
         color_inputs = []
 
-        # Add image inputs with loop for duration
+        # Add image inputs with loop for duration - SEMPRE usar caminhos absolutos
         for i, (img, duration) in enumerate(zip(images, durations)):
-            if img.image_path and os.path.exists(img.image_path):
-                inputs.extend(["-loop", "1", "-t", str(duration), "-i", img.image_path])
-                color_inputs.append(False)
+            if img.image_path:
+                abs_image_path = _to_absolute_path(img.image_path)
+                if os.path.exists(abs_image_path):
+                    inputs.extend(["-loop", "1", "-t", str(duration), "-i", abs_image_path])
+                    color_inputs.append(False)
+                else:
+                    scene_mood = scenes[i].mood if i < len(scenes) else "neutro"
+                    color = MOOD_COLORS.get(scene_mood, "0x646464")
+                    logger.warning(f"Scene {i} missing image at {abs_image_path}, using color {color}")
+                    inputs.extend([
+                        "-f", "lavfi",
+                        "-t", str(duration),
+                        "-i", f"color=c={color}:s={width}x{height}:r={cfg.fps}"
+                    ])
+                    color_inputs.append(True)
             else:
                 scene_mood = scenes[i].mood if i < len(scenes) else "neutro"
                 color = MOOD_COLORS.get(scene_mood, "0x646464")
-                logger.warning(f"Scene {i} missing image, using color {color}")
+                logger.warning(f"Scene {i} has no image path, using color {color}")
                 inputs.extend([
                     "-f", "lavfi",
                     "-t", str(duration),
@@ -659,7 +733,7 @@ class VideoComposer:
 
         # Add audio input
         audio_index = len(images)
-        inputs.extend(["-i", audio_path])
+        inputs.extend(["-i", audio_path_abs])
 
         # Process each image
         processed_streams = []
@@ -776,7 +850,7 @@ class VideoComposer:
             "-movflags", "+faststart",
             "-pix_fmt", "yuv420p",
             "-max_muxing_queue_size", "1024",
-            str(output_path)
+            output_path_abs
         ]
 
         return cmd
