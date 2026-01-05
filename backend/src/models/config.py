@@ -165,9 +165,9 @@ class AIMusicConfig(BaseModel):
 
 class MusicConfig(BaseModel):
     mode: MusicMode = MusicMode.NONE
-    volume: float = Field(default=0.15, ge=0, le=1)
+    volume: float = Field(default=0.08, ge=0, le=1)  # Reduzido de 0.15 para 0.08
     ducking_enabled: bool = True
-    ducking_intensity: float = Field(default=0.7, ge=0, le=1)
+    ducking_intensity: float = Field(default=0.9, ge=0, le=1)  # Aumentado para ducking mais agressivo
     fade_in_ms: int = 1000
     fade_out_ms: int = 2000
     crossfade_ms: int = 1500

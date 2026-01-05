@@ -355,8 +355,9 @@ Use apenas: alegre, animado, calmo, dramatico, inspirador, melancolico, neutro, 
         scenes = []
         for s in data["scenes"]:
             duration_ms = s["end_ms"] - s["start_ms"]
-            if duration_ms < 1000:
-                duration_ms = 1000
+            # Mínimo de 3 segundos para evitar cenas muito rápidas
+            if duration_ms < 3000:
+                duration_ms = 3000
 
             scenes.append(Scene(
                 scene_index=s["scene_index"],

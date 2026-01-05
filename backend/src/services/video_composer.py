@@ -661,23 +661,24 @@ class VideoComposer:
     def _calculate_durations(self, scenes: List[Scene]) -> List[float]:
         """Calcula duração de cada cena baseado no modo."""
         mode = self.config.scene_duration.mode.value
+        min_d = self.config.scene_duration.min_duration or 3.0
+        max_d = self.config.scene_duration.max_duration or 6.0
 
         if mode == "auto":
-            return [max(1.0, s.duration_ms / 1000) for s in scenes]  # Mínimo 1s
+            # Usar duração do timestamp, mas respeitar min/max do config
+            return [max(min_d, min(max_d, s.duration_ms / 1000)) for s in scenes]
 
         elif mode == "fixed":
             fixed = self.config.scene_duration.fixed_duration or 4.0
             return [fixed] * len(scenes)
 
         elif mode == "range":
-            min_d = self.config.scene_duration.min_duration or 3.0
-            max_d = self.config.scene_duration.max_duration or 6.0
             return [
                 max(min_d, min(max_d, s.duration_ms / 1000))
                 for s in scenes
             ]
 
-        return [max(1.0, s.duration_ms / 1000) for s in scenes]
+        return [max(min_d, s.duration_ms / 1000) for s in scenes]
 
     def _build_ffmpeg_command(
         self,

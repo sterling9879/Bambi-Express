@@ -143,10 +143,10 @@ class AudioMixer:
 
         # Calculate parameters based on ducking intensity
         # Higher intensity = more compression (lower music during speech)
-        threshold = 0.02
-        ratio = 4 + config.ducking_intensity * 8  # Range: 4-12
-        attack = 50  # ms
-        release = 500  # ms
+        threshold = 0.01  # Mais sensível para detectar fala
+        ratio = 8 + config.ducking_intensity * 12  # Range: 8-20 (mais agressivo)
+        attack = 20  # ms - resposta mais rápida
+        release = 800  # ms - mantém música baixa por mais tempo após fala
 
         fade_out_start = max(0, narration_duration - music_segment.fade_out_ms / 1000)
 
