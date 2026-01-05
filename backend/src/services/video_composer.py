@@ -428,19 +428,34 @@ class VideoComposer:
         list_file = output_path.parent / f"concat_list_{output_path.stem}.txt"
         self._temp_files.append(list_file)
 
+        # Verificar que todos os arquivos existem antes de concatenar
+        missing_files = []
+        for video_path in video_paths:
+            abs_path = video_path.resolve()
+            if not abs_path.exists():
+                missing_files.append(str(abs_path))
+
+        if missing_files:
+            logger.error(f"Missing batch files: {missing_files[:5]}...")
+            raise RuntimeError(f"Missing {len(missing_files)} batch files for concat")
+
         with open(list_file, "w") as f:
             for video_path in video_paths:
-                escaped_path = str(video_path).replace("'", "'\\''")
+                # Usar caminho absoluto para evitar "No such file or directory"
+                abs_path = video_path.resolve()
+                escaped_path = str(abs_path).replace("'", "'\\''")
                 f.write(f"file '{escaped_path}'\n")
+
+        logger.info(f"Concat list created with {len(video_paths)} files at {list_file}")
 
         cmd = [
             "ffmpeg", "-y",
             "-threads", str(FFMPEG_THREADS),
             "-f", "concat",
             "-safe", "0",
-            "-i", str(list_file),
+            "-i", str(list_file.resolve()),  # Também usar caminho absoluto aqui
             "-c", "copy",
-            str(output_path)
+            str(output_path.resolve())
         ]
 
         self._run_ffmpeg(cmd, "concat_simple", timeout=450)
