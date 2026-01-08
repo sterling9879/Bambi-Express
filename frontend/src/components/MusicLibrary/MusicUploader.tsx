@@ -8,20 +8,21 @@ import toast from 'react-hot-toast';
 import type { MusicMood } from '@/lib/types';
 
 const MOODS: { value: MusicMood; label: string }[] = [
-  { value: 'upbeat', label: 'Upbeat' },
-  { value: 'dramatic', label: 'Dramatic' },
-  { value: 'calm', label: 'Calm' },
-  { value: 'emotional', label: 'Emotional' },
-  { value: 'inspiring', label: 'Inspiring' },
-  { value: 'dark', label: 'Dark' },
-  { value: 'neutral', label: 'Neutral' },
-  { value: 'epic', label: 'Epic' },
-  { value: 'suspense', label: 'Suspense' },
+  { value: 'alegre', label: 'Alegre' },
+  { value: 'animado', label: 'Animado' },
+  { value: 'calmo', label: 'Calmo' },
+  { value: 'dramatico', label: 'Dramático' },
+  { value: 'inspirador', label: 'Inspirador' },
+  { value: 'melancolico', label: 'Melancólico' },
+  { value: 'raiva', label: 'Raiva' },
+  { value: 'romantico', label: 'Romântico' },
+  { value: 'sombrio', label: 'Sombrio' },
+  { value: 'vibrante', label: 'Vibrante' },
 ];
 
 export function MusicUploader() {
   const { uploadFile, isUploading } = useMusicLibrary();
-  const [selectedMood, setSelectedMood] = useState<MusicMood>('neutral');
+  const [selectedMood, setSelectedMood] = useState<MusicMood>('calmo');
   const [tags, setTags] = useState('');
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
 

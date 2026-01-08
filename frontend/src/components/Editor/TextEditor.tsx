@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Play, FileText, Clock, Hash } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Play, FileText, Clock, Hash, FolderOpen } from 'lucide-react';
+import { channelsApi } from '@/lib/api';
 import type { TextAnalysis } from '@/lib/types';
 
 interface TextEditorProps {
   onAnalyze: (text: string) => Promise<TextAnalysis>;
-  onGenerate: (text: string) => Promise<void>;
+  onGenerate: (text: string, title?: string, channelId?: string) => Promise<void>;
   textAnalysis: TextAnalysis | null;
   isGenerating: boolean;
 }
@@ -24,7 +26,14 @@ export function TextEditor({
   isGenerating,
 }: TextEditorProps) {
   const [text, setText] = useState('');
+  const [title, setTitle] = useState('');
+  const [selectedChannel, setSelectedChannel] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  const { data: channels = [] } = useQuery({
+    queryKey: ['channels'],
+    queryFn: channelsApi.list,
+  });
 
   // Debounce analysis
   useEffect(() => {
@@ -46,8 +55,12 @@ export function TextEditor({
 
   const handleGenerate = useCallback(async () => {
     if (!text.trim() || isGenerating) return;
-    await onGenerate(text);
-  }, [text, isGenerating, onGenerate]);
+    await onGenerate(
+      text,
+      title.trim() || undefined,
+      selectedChannel || undefined
+    );
+  }, [text, title, selectedChannel, isGenerating, onGenerate]);
 
   const charCount = text.length;
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
@@ -62,6 +75,42 @@ export function TextEditor({
       </div>
 
       <div className="p-6 space-y-4">
+        {/* Title and Channel */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Título do Vídeo (opcional)
+            </label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Ex: Dicas de Produtividade"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <span className="flex items-center space-x-1">
+                <FolderOpen className="w-4 h-4" />
+                <span>Canal (opcional)</span>
+              </span>
+            </label>
+            <select
+              value={selectedChannel}
+              onChange={(e) => setSelectedChannel(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            >
+              <option value="">Sem canal</option>
+              {channels.map((channel) => (
+                <option key={channel.id} value={channel.id}>
+                  {channel.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         {/* Text area */}
         <div>
           <textarea

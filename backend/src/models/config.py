@@ -25,15 +25,16 @@ class TransitionType(str, Enum):
 
 
 class MusicMood(str, Enum):
-    UPBEAT = "upbeat"
-    DRAMATIC = "dramatic"
-    CALM = "calm"
-    EMOTIONAL = "emotional"
-    INSPIRING = "inspiring"
-    DARK = "dark"
-    NEUTRAL = "neutral"
-    EPIC = "epic"
-    SUSPENSE = "suspense"
+    ALEGRE = "alegre"
+    ANIMADO = "animado"
+    CALMO = "calmo"
+    DRAMATICO = "dramatico"
+    INSPIRADOR = "inspirador"
+    MELANCOLICO = "melancolico"
+    RAIVA = "raiva"
+    ROMANTICO = "romantico"
+    SOMBRIO = "sombrio"
+    VIBRANTE = "vibrante"
 
 
 class MusicMode(str, Enum):
@@ -70,8 +71,9 @@ class GeminiConfig(ApiConfigItem):
 
 
 class WaveSpeedConfig(ApiConfigItem):
-    model: str = "flux-schnell"
+    model: str = "flux-dev-ultra-fast"
     resolution: str = "1920x1080"
+    image_style: str = "cinematic, dramatic lighting, 8k, hyperrealistic, professional photography"
 
 
 class SunoConfig(ApiConfigItem):
@@ -163,9 +165,9 @@ class AIMusicConfig(BaseModel):
 
 class MusicConfig(BaseModel):
     mode: MusicMode = MusicMode.NONE
-    volume: float = Field(default=0.15, ge=0, le=1)
+    volume: float = Field(default=0.08, ge=0, le=1)  # Reduzido de 0.15 para 0.08
     ducking_enabled: bool = True
-    ducking_intensity: float = Field(default=0.7, ge=0, le=1)
+    ducking_intensity: float = Field(default=0.9, ge=0, le=1)  # Aumentado para ducking mais agressivo
     fade_in_ms: int = 1000
     fade_out_ms: int = 2000
     crossfade_ms: int = 1500

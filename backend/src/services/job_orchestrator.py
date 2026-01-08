@@ -32,6 +32,7 @@ class JobOrchestrator:
     Features:
     - Execução sequencial das etapas
     - Atualização de progresso em tempo real
+    - Logs detalhados em tempo real
     - Tratamento de erros com retry
     - Possibilidade de retomar de etapa específica
     """
@@ -49,10 +50,18 @@ class JobOrchestrator:
         self.output_dir = Path(output_dir)
         self.music_library_path = music_library_path
         self.status_callback = status_callback
+        self._logs: list[str] = []
 
         # Ensure directories exist
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def _add_log(self, message: str):
+        """Adiciona uma mensagem ao log."""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        log_entry = f"[{timestamp}] {message}"
+        self._logs.append(log_entry)
+        logger.info(message)
 
     async def run(self, job_id: str, text: str) -> str:
         """
@@ -70,7 +79,11 @@ class JobOrchestrator:
         job_temp_dir.mkdir(parents=True, exist_ok=True)
 
         try:
+            # Clear logs for new job
+            self._logs = []
+
             # 1. Processar texto
+            self._add_log("Iniciando processamento de texto...")
             await self._update_status(
                 job_id, JobStatusEnum.PROCESSING_TEXT, 0.05,
                 "Processando texto", started_at
@@ -79,9 +92,10 @@ class JobOrchestrator:
             text_processor = TextProcessor()
             chunks = text_processor.process(text)
 
-            logger.info(f"Texto dividido em {len(chunks)} chunks")
+            self._add_log(f"Texto dividido em {len(chunks)} chunks")
 
             # 2. Gerar áudios
+            self._add_log("Iniciando geração de áudio com ElevenLabs...")
             await self._update_status(
                 job_id, JobStatusEnum.GENERATING_AUDIO, 0.10,
                 "Gerando áudio", started_at,
@@ -95,21 +109,33 @@ class JobOrchestrator:
                 output_dir=str(job_temp_dir)
             )
 
+            # Progress callback simples - sem asyncio.create_task para evitar tasks órfãs
+            def audio_progress(c, t):
+                try:
+                    # Atualização síncrona para evitar race conditions
+                    if self.status_callback:
+                        from ..models.job import JobStatus
+                        status = JobStatus(
+                            job_id=job_id,
+                            status=JobStatusEnum.GENERATING_AUDIO,
+                            progress=0.10 + (c / t) * 0.15,
+                            current_step=f"Gerando áudio {c}/{t}",
+                            details={"chunks_completed": c, "chunks_total": t},
+                            logs=self._logs.copy(),
+                            started_at=started_at,
+                            updated_at=datetime.now()
+                        )
+                        self.status_callback(status)
+                except Exception as e:
+                    logger.warning(f"Audio progress callback error: {e}")
+
             audio_chunks = await audio_generator.generate_all(
                 chunks,
-                progress_callback=lambda c, t: asyncio.create_task(
-                    self._update_status(
-                        job_id,
-                        JobStatusEnum.GENERATING_AUDIO,
-                        0.10 + (c / t) * 0.15,
-                        f"Gerando áudio {c}/{t}",
-                        started_at,
-                        {"chunks_completed": c, "chunks_total": t}
-                    )
-                )
+                progress_callback=audio_progress
             )
 
             # 3. Concatenar áudios
+            self._add_log(f"Áudio gerado com sucesso. Concatenando {len(audio_chunks)} arquivos...")
             await self._update_status(
                 job_id, JobStatusEnum.MERGING_AUDIO, 0.25,
                 "Concatenando áudio", started_at
@@ -118,9 +144,10 @@ class JobOrchestrator:
             audio_merger = AudioMerger(output_dir=str(job_temp_dir))
             merged_audio = audio_merger.merge(audio_chunks)
 
-            logger.info(f"Áudio concatenado: {merged_audio.duration_ms}ms")
+            self._add_log(f"Áudio concatenado: {merged_audio.duration_ms}ms ({merged_audio.duration_ms / 1000:.1f}s)")
 
             # 4. Transcrever com AssemblyAI
+            self._add_log("Enviando áudio para transcrição com AssemblyAI...")
             await self._update_status(
                 job_id, JobStatusEnum.TRANSCRIBING, 0.30,
                 "Transcrevendo áudio", started_at
@@ -130,26 +157,38 @@ class JobOrchestrator:
                 api_key=self.config.api.assemblyai.api_key
             )
 
+            # Progress callback para transcrição
+            def transcribe_progress(s, p):
+                try:
+                    if self.status_callback:
+                        from ..models.job import JobStatus
+                        status = JobStatus(
+                            job_id=job_id,
+                            status=JobStatusEnum.TRANSCRIBING,
+                            progress=0.30 + p * 0.10,
+                            current_step=f"Transcrevendo: {s}",
+                            details={},
+                            logs=self._logs.copy(),
+                            started_at=started_at,
+                            updated_at=datetime.now()
+                        )
+                        self.status_callback(status)
+                except Exception as e:
+                    logger.warning(f"Transcribe progress callback error: {e}")
+
             transcription = await transcriber.transcribe(
                 audio_path=merged_audio.path,
                 language_code=self.config.api.assemblyai.language_code,
-                progress_callback=lambda s, p: asyncio.create_task(
-                    self._update_status(
-                        job_id,
-                        JobStatusEnum.TRANSCRIBING,
-                        0.30 + p * 0.10,
-                        f"Transcrevendo: {s}",
-                        started_at
-                    )
-                )
+                progress_callback=transcribe_progress
             )
 
-            logger.info(
-                f"Transcrição: {len(transcription.words)} palavras, "
+            self._add_log(
+                f"Transcrição concluída: {len(transcription.words)} palavras, "
                 f"{len(transcription.segments)} segmentos"
             )
 
             # 5. Analisar cenas
+            self._add_log("Iniciando análise de cenas com Gemini...")
             await self._update_status(
                 job_id, JobStatusEnum.ANALYZING_SCENES, 0.40,
                 "Analisando cenas", started_at
@@ -157,7 +196,9 @@ class JobOrchestrator:
 
             scene_analyzer = SceneAnalyzer(
                 api_key=self.config.api.gemini.api_key,
-                model=self.config.api.gemini.model
+                model=self.config.api.gemini.model,
+                image_style=self.config.api.wavespeed.image_style,
+                log_callback=self._add_log
             )
 
             scene_analysis = await scene_analyzer.analyze(
@@ -166,9 +207,10 @@ class JobOrchestrator:
                 max_scene_duration=self.config.ffmpeg.scene_duration.max_duration or 6.0
             )
 
-            logger.info(f"Cenas analisadas: {len(scene_analysis.scenes)}")
+            self._add_log(f"Análise de cenas concluída: {len(scene_analysis.scenes)} cenas identificadas")
 
             # 6. Selecionar/gerar música
+            self._add_log("Selecionando música de fundo...")
             await self._update_status(
                 job_id, JobStatusEnum.SELECTING_MUSIC, 0.45,
                 "Selecionando música", started_at
@@ -207,6 +249,7 @@ class JobOrchestrator:
                         )]
 
             # 7. Gerar imagens
+            self._add_log(f"Iniciando geração de {len(scene_analysis.scenes)} imagens com WaveSpeed...")
             await self._update_status(
                 job_id, JobStatusEnum.GENERATING_IMAGES, 0.50,
                 "Gerando imagens", started_at,
@@ -217,24 +260,36 @@ class JobOrchestrator:
                 api_key=self.config.api.wavespeed.api_key,
                 model=self.config.api.wavespeed.model,
                 resolution=self.config.api.wavespeed.resolution,
-                output_dir=str(job_temp_dir)
+                output_dir=str(job_temp_dir),
+                log_callback=self._add_log
             )
+
+            # Progress callback para imagens - o mais crítico (121+ chamadas)
+            def image_progress(c, t):
+                try:
+                    if self.status_callback:
+                        from ..models.job import JobStatus
+                        status = JobStatus(
+                            job_id=job_id,
+                            status=JobStatusEnum.GENERATING_IMAGES,
+                            progress=0.50 + (c / t) * 0.30,
+                            current_step=f"Gerando imagem {c}/{t}",
+                            details={"images_completed": c, "images_total": t},
+                            logs=self._logs.copy(),
+                            started_at=started_at,
+                            updated_at=datetime.now()
+                        )
+                        self.status_callback(status)
+                except Exception as e:
+                    logger.warning(f"Image progress callback error: {e}")
 
             images = await image_generator.generate_all(
                 scene_analysis.scenes,
-                progress_callback=lambda c, t: asyncio.create_task(
-                    self._update_status(
-                        job_id,
-                        JobStatusEnum.GENERATING_IMAGES,
-                        0.50 + (c / t) * 0.30,
-                        f"Gerando imagem {c}/{t}",
-                        started_at,
-                        {"images_completed": c, "images_total": t}
-                    )
-                )
+                progress_callback=image_progress
             )
 
             # 8. Mixar áudio
+            self._add_log(f"Imagens geradas com sucesso. Mixando áudio...")
             await self._update_status(
                 job_id, JobStatusEnum.MIXING_AUDIO, 0.80,
                 "Mixando áudio", started_at
@@ -248,6 +303,7 @@ class JobOrchestrator:
             )
 
             # 9. Compor vídeo
+            self._add_log("Áudio mixado. Iniciando composição do vídeo final...")
             await self._update_status(
                 job_id, JobStatusEnum.COMPOSING_VIDEO, 0.85,
                 "Montando vídeo", started_at
@@ -280,15 +336,17 @@ class JobOrchestrator:
                 }
             )
 
-            logger.info(f"Vídeo gerado: {result.path}")
+            self._add_log(f"Vídeo gerado com sucesso: {result.path}")
+            self._add_log(f"Duração: {result.duration_seconds:.1f}s, Cenas: {result.scenes_count}, Tamanho: {result.file_size / 1024 / 1024:.1f}MB")
 
             # Cleanup temp files
+            self._add_log("Limpando arquivos temporários...")
             self._cleanup_temp_dir(job_temp_dir)
 
             return result.path
 
         except Exception as e:
-            logger.error(f"Erro no pipeline: {e}", exc_info=True)
+            self._add_log(f"ERRO no pipeline: {str(e)}")
             await self._update_status(
                 job_id, JobStatusEnum.FAILED, 0,
                 "Erro", started_at,
@@ -313,6 +371,7 @@ class JobOrchestrator:
             progress=progress,
             current_step=current_step,
             details=details or {},
+            logs=self._logs.copy(),
             started_at=started_at,
             updated_at=datetime.now(),
             error=error
@@ -325,6 +384,9 @@ class JobOrchestrator:
                     await result
             except Exception as e:
                 logger.warning(f"Status callback error: {e}")
+
+        # Yield control ao event loop para permitir que outras requisições sejam processadas
+        await asyncio.sleep(0)
 
     def _cleanup_temp_dir(self, temp_dir: Path):
         """Remove arquivos temporários após processamento."""

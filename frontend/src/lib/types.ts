@@ -11,12 +11,13 @@ export interface ApiConfig {
   };
   gemini: {
     apiKey: string;
-    model: 'gemini-2.0-flash' | 'gemini-2.5-pro';
+    model: 'gemini-2.0-flash' | 'gemini-2.0-flash-lite' | 'gemini-2.5-pro';
   };
   wavespeed: {
     apiKey: string;
-    model: 'flux-schnell' | 'flux-dev';
+    model: 'flux-dev-ultra-fast' | 'flux-schnell' | 'flux-dev';
     resolution: '1920x1080' | '1280x720' | '1080x1920';
+    imageStyle?: string;
   };
   suno?: {
     apiKey: string;
@@ -26,15 +27,16 @@ export interface ApiConfig {
 
 // Music Types
 export type MusicMood =
-  | 'upbeat'
-  | 'dramatic'
-  | 'calm'
-  | 'emotional'
-  | 'inspiring'
-  | 'dark'
-  | 'neutral'
-  | 'epic'
-  | 'suspense';
+  | 'alegre'
+  | 'animado'
+  | 'calmo'
+  | 'dramatico'
+  | 'inspirador'
+  | 'melancolico'
+  | 'raiva'
+  | 'romantico'
+  | 'sombrio'
+  | 'vibrante';
 
 export interface MusicTrack {
   id: string;
@@ -187,6 +189,7 @@ export interface Job {
   progress: number;
   currentStep: string;
   details: Record<string, unknown>;
+  logs: string[];
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
@@ -225,8 +228,77 @@ export interface CreditsResponse {
 }
 
 export interface Voice {
-  voice_id: string;
+  voiceId: string;
   name: string;
   category?: string;
   labels?: Record<string, string>;
+}
+
+// History Types
+export interface Channel {
+  id: string;
+  name: string;
+  description?: string;
+  color: string;
+  createdAt: string;
+  videoCount: number;
+}
+
+export interface ChannelCreate {
+  name: string;
+  description?: string;
+  color?: string;
+}
+
+export interface VideoHistory {
+  id: string;
+  jobId: string;
+  title: string;
+  channelId?: string;
+  channelName?: string;
+  textPreview: string;
+  videoPath: string;
+  videoUrl?: string;
+  thumbnailUrl?: string;
+  durationSeconds: number;
+  scenesCount: number;
+  fileSize: number;
+  resolution: string;
+  createdAt: string;
+}
+
+export interface VideoHistoryList {
+  videos: VideoHistory[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export type ElementType = 'image' | 'audio' | 'narration' | 'music';
+
+export interface Element {
+  id: string;
+  jobId: string;
+  elementType: ElementType;
+  filePath: string;
+  fileUrl?: string;
+  fileSize: number;
+  sceneIndex?: number;
+  prompt?: string;
+  durationMs?: number;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface ElementList {
+  elements: Element[];
+  total: number;
+}
+
+export interface HistoryStats {
+  totalVideos: number;
+  totalDurationSeconds: number;
+  totalSizeBytes: number;
+  videosByChannel: Record<string, number>;
+  recentVideos: VideoHistory[];
 }

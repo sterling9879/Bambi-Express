@@ -31,6 +31,7 @@ class JobStatus(BaseModel):
     progress: float
     current_step: str
     details: Dict[str, Any] = {}
+    logs: list[str] = []
     started_at: datetime
     updated_at: datetime
     error: Optional[str] = None

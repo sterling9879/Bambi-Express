@@ -21,6 +21,7 @@ class JobStatusResponse(BaseModel):
     progress: float
     current_step: str
     details: Dict[str, Any] = {}
+    logs: List[str] = []
     created_at: str
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
@@ -105,6 +106,7 @@ async def get_job_status(job_id: str):
         progress=job.get("progress", 0),
         current_step=job.get("current_step", ""),
         details=job.get("details", {}),
+        logs=job.get("logs", []),
         created_at=job.get("created_at", ""),
         started_at=job.get("started_at"),
         completed_at=job.get("completed_at"),

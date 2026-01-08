@@ -48,6 +48,8 @@ async def analyze_text(request: TextAnalysisRequest):
 
 class GenerateVideoRequest(BaseModel):
     text: str
+    title: Optional[str] = None
+    channel_id: Optional[str] = None
     config_override: Optional[Dict[str, Any]] = None
 
 
@@ -59,7 +61,23 @@ class GenerateVideoResponse(BaseModel):
 
 
 # In-memory job storage (in production, use Redis or database)
+# Limita a 50 jobs para evitar vazamento de memória
 _jobs_db: Dict[str, Dict] = {}
+_MAX_JOBS_IN_MEMORY = 50
+
+
+def _cleanup_old_jobs():
+    """Remove jobs antigos para evitar vazamento de memória."""
+    global _jobs_db
+    if len(_jobs_db) > _MAX_JOBS_IN_MEMORY:
+        # Ordenar por data de criação e manter apenas os mais recentes
+        sorted_jobs = sorted(
+            _jobs_db.items(),
+            key=lambda x: x[1].get("created_at", ""),
+            reverse=True
+        )
+        # Manter apenas os N mais recentes
+        _jobs_db = dict(sorted_jobs[:_MAX_JOBS_IN_MEMORY])
 
 
 @router.post("/generate", response_model=GenerateVideoResponse)
@@ -82,6 +100,9 @@ async def generate_video(
             detail="Texto muito longo. Máximo de 50.000 caracteres."
         )
 
+    # Cleanup old jobs to prevent memory leak
+    _cleanup_old_jobs()
+
     # Generate job ID
     job_id = str(uuid.uuid4())
 
@@ -89,10 +110,15 @@ async def generate_video(
     processor = TextProcessor()
     estimated_duration = processor.estimate_duration(text)
 
+    # Generate title if not provided
+    title = request.title or f"Vídeo {datetime.now().strftime('%d/%m %H:%M')}"
+
     # Store job info
     _jobs_db[job_id] = {
         "id": job_id,
         "text": text,
+        "title": title,
+        "channel_id": request.channel_id,
         "config_override": request.config_override,
         "status": JobStatusEnum.PENDING.value,
         "progress": 0,
@@ -109,6 +135,8 @@ async def generate_video(
         _run_video_generation,
         job_id,
         text,
+        title,
+        request.channel_id,
         request.config_override
     )
 
@@ -123,27 +151,39 @@ async def generate_video(
 async def _run_video_generation(
     job_id: str,
     text: str,
+    title: str,
+    channel_id: Optional[str],
     config_override: Optional[Dict[str, Any]] = None
 ):
     """
     Background task para executar a geração de vídeo.
     """
     import json
+    import logging
+    import traceback
     from pathlib import Path
     from ..services.job_orchestrator import JobOrchestrator
+    from ..services.history_service import get_history_service
     from ..models.job import JobStatus
+    from ..models.history import VideoHistoryCreate
+
+    logger = logging.getLogger(__name__)
 
     def status_callback(status: JobStatus):
-        """Update job status in memory."""
-        if job_id in _jobs_db:
-            _jobs_db[job_id].update({
-                "status": status.status.value,
-                "progress": status.progress,
-                "current_step": status.current_step,
-                "updated_at": status.updated_at.isoformat(),
-                "error": status.error,
-                "details": status.details
-            })
+        """Update job status in memory - com proteção contra erros."""
+        try:
+            if job_id in _jobs_db:
+                _jobs_db[job_id].update({
+                    "status": status.status.value,
+                    "progress": status.progress,
+                    "current_step": status.current_step,
+                    "updated_at": status.updated_at.isoformat(),
+                    "error": status.error,
+                    "details": status.details,
+                    "logs": status.logs[-100:] if status.logs else []  # Limitar logs
+                })
+        except Exception as e:
+            logger.error(f"Error in status_callback: {e}")
 
     try:
         # Load config
@@ -173,7 +213,11 @@ async def _run_video_generation(
             status_callback=status_callback
         )
 
-        video_path = await orchestrator.run(job_id, text)
+        result = await orchestrator.run(job_id, text)
+
+        # Get video info
+        video_path = result if isinstance(result, str) else result.get("video_path", result)
+        video_file = Path(video_path)
 
         # Update job as completed
         _jobs_db[job_id].update({
@@ -185,13 +229,48 @@ async def _run_video_generation(
             }
         })
 
+        # Save to history
+        try:
+            history_service = get_history_service()
+
+            # Get video file stats
+            file_size = video_file.stat().st_size if video_file.exists() else 0
+
+            # Get details from orchestrator if available
+            details = _jobs_db[job_id].get("details", {})
+            duration = details.get("duration_seconds", 0)
+            scenes_count = details.get("scenes_count", 0)
+            resolution = f"{config.ffmpeg.resolution.width}x{config.ffmpeg.resolution.height}"
+
+            history_service.add_video(VideoHistoryCreate(
+                job_id=job_id,
+                title=title,
+                channel_id=channel_id,
+                text_preview=text[:200],
+                video_path=video_path,
+                duration_seconds=duration,
+                scenes_count=scenes_count,
+                file_size=file_size,
+                resolution=resolution
+            ))
+        except Exception as hist_error:
+            logger.error(f"Failed to save video to history: {hist_error}")
+
     except Exception as e:
-        # Update job as failed
-        _jobs_db[job_id].update({
-            "status": JobStatusEnum.FAILED.value,
-            "error": str(e),
-            "completed_at": datetime.now().isoformat()
-        })
+        # Log the full traceback for debugging
+        error_msg = str(e)[:500]  # Limitar tamanho do erro
+        logger.error(f"Video generation failed for job {job_id}: {error_msg}")
+        logger.error(traceback.format_exc())
+
+        # Update job as failed - com try/except para garantir que não falhe
+        try:
+            _jobs_db[job_id].update({
+                "status": JobStatusEnum.FAILED.value,
+                "error": error_msg,
+                "completed_at": datetime.now().isoformat()
+            })
+        except Exception as update_error:
+            logger.error(f"Failed to update job status: {update_error}")
 
 
 def get_job(job_id: str) -> Optional[Dict]:
