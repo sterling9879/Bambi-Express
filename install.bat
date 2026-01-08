@@ -1,98 +1,131 @@
 @echo off
-chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 title Bambi Express - Instalador
 
 echo.
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║                                                              ║
-echo ║              BAMBI EXPRESS - VIDEO GENERATOR                 ║
-echo ║                   Instalação Automática                      ║
-echo ║                                                              ║
-echo ╚══════════════════════════════════════════════════════════════╝
+echo ============================================================
+echo.
+echo              BAMBI EXPRESS - VIDEO GENERATOR
+echo                   Instalacao Automatica
+echo.
+echo ============================================================
 echo.
 
 :: ============================================
 :: VERIFICAR PYTHON
 :: ============================================
 echo [1/7] Verificando Python...
-python --version >nul 2>&1
+
+where python >nul 2>&1
 if %errorlevel% neq 0 (
-    echo.
-    echo ❌ ERRO: Python não encontrado!
-    echo.
-    echo    Por favor, instale o Python 3.10+ em:
-    echo    https://www.python.org/downloads/
-    echo.
-    echo    IMPORTANTE: Marque a opção "Add Python to PATH" durante a instalação!
-    echo.
-    pause
-    exit /b 1
+    where python3 >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo.
+        echo [ERRO] Python nao encontrado!
+        echo.
+        echo    Por favor, instale o Python 3.10+ em:
+        echo    https://www.python.org/downloads/
+        echo.
+        echo    IMPORTANTE: Marque a opcao "Add Python to PATH" durante a instalacao!
+        echo.
+        pause
+        exit /b 1
+    ) else (
+        set PYTHON_CMD=python3
+    )
+) else (
+    set PYTHON_CMD=python
 )
-for /f "tokens=2" %%i in ('python --version 2^>^&1') do set PYTHON_VERSION=%%i
-echo    ✓ Python %PYTHON_VERSION% encontrado
+
+for /f "tokens=2" %%i in ('%PYTHON_CMD% --version 2^>^&1') do set PYTHON_VERSION=%%i
+echo    [OK] Python %PYTHON_VERSION% encontrado
 
 :: ============================================
 :: VERIFICAR NODE.JS
 :: ============================================
 echo.
 echo [2/7] Verificando Node.js...
-node --version >nul 2>&1
+
+where node >nul 2>&1
 if %errorlevel% neq 0 (
     echo.
-    echo ❌ ERRO: Node.js não encontrado!
+    echo [ERRO] Node.js nao encontrado!
     echo.
     echo    Por favor, instale o Node.js 18+ em:
     echo    https://nodejs.org/
     echo.
+    echo    Reinicie o terminal apos a instalacao.
+    echo.
     pause
     exit /b 1
 )
+
 for /f "tokens=1" %%i in ('node --version 2^>^&1') do set NODE_VERSION=%%i
-echo    ✓ Node.js %NODE_VERSION% encontrado
+echo    [OK] Node.js %NODE_VERSION% encontrado
+
+:: ============================================
+:: VERIFICAR NPM
+:: ============================================
+echo.
+echo [3/7] Verificando npm...
+
+where npm >nul 2>&1
+if %errorlevel% neq 0 (
+    echo.
+    echo [ERRO] npm nao encontrado!
+    echo.
+    echo    Reinstale o Node.js em: https://nodejs.org/
+    echo.
+    pause
+    exit /b 1
+)
+
+for /f "tokens=1" %%i in ('npm --version 2^>^&1') do set NPM_VERSION=%%i
+echo    [OK] npm %NPM_VERSION% encontrado
 
 :: ============================================
 :: VERIFICAR FFMPEG
 :: ============================================
 echo.
-echo [3/7] Verificando FFMPEG...
-ffmpeg -version >nul 2>&1
+echo [4/7] Verificando FFMPEG...
+
+where ffmpeg >nul 2>&1
 if %errorlevel% neq 0 (
     echo.
-    echo ⚠️  AVISO: FFMPEG não encontrado!
+    echo [AVISO] FFMPEG nao encontrado!
     echo.
-    echo    O FFMPEG é necessário para gerar vídeos.
-    echo    Instale usando um dos métodos:
+    echo    O FFMPEG e necessario para gerar videos.
+    echo    Instale usando um dos metodos:
     echo.
-    echo    1. Winget (recomendado):
-    echo       winget install ffmpeg
-    echo.
-    echo    2. Chocolatey:
-    echo       choco install ffmpeg
-    echo.
-    echo    3. Download manual:
-    echo       https://ffmpeg.org/download.html
-    echo       (Adicione ao PATH após instalar)
+    echo    1. Winget: winget install ffmpeg
+    echo    2. Chocolatey: choco install ffmpeg
+    echo    3. Download: https://ffmpeg.org/download.html
     echo.
     set FFMPEG_MISSING=1
 ) else (
-    echo    ✓ FFMPEG encontrado
+    echo    [OK] FFMPEG encontrado
 )
 
 :: ============================================
 :: CRIAR AMBIENTE VIRTUAL PYTHON
 :: ============================================
 echo.
-echo [4/7] Configurando ambiente Python...
+echo [5/7] Configurando ambiente Python...
 
 cd /d "%~dp0backend"
+if %errorlevel% neq 0 (
+    echo [ERRO] Pasta backend nao encontrada!
+    pause
+    exit /b 1
+)
 
 if not exist "venv" (
     echo    Criando ambiente virtual...
-    python -m venv venv
+    %PYTHON_CMD% -m venv venv
     if %errorlevel% neq 0 (
-        echo ❌ ERRO: Falha ao criar ambiente virtual
+        echo [ERRO] Falha ao criar ambiente virtual
+        echo    Tente: %PYTHON_CMD% -m pip install virtualenv
         pause
         exit /b 1
     )
@@ -100,148 +133,137 @@ if not exist "venv" (
 
 echo    Ativando ambiente virtual...
 call venv\Scripts\activate.bat
-
-echo    Atualizando pip...
-python -m pip install --upgrade pip --quiet
-
-echo    Instalando dependências Python...
-pip install -r requirements.txt --quiet
 if %errorlevel% neq 0 (
-    echo ❌ ERRO: Falha ao instalar dependências Python
+    echo [ERRO] Falha ao ativar ambiente virtual
     pause
     exit /b 1
 )
-echo    ✓ Dependências Python instaladas
 
-:: ============================================
-:: CONFIGURAR .ENV
-:: ============================================
-echo.
-echo [5/7] Configurando variáveis de ambiente...
+echo    Atualizando pip...
+python -m pip install --upgrade pip
 
-if not exist ".env" (
-    if exist ".env.example" (
-        copy ".env.example" ".env" >nul
-        echo    ✓ Arquivo .env criado a partir do .env.example
-        echo.
-        echo    ⚠️  IMPORTANTE: Edite o arquivo backend\.env com suas API keys:
-        echo       - ELEVENLABS_API_KEY
-        echo       - ASSEMBLYAI_API_KEY
-        echo       - GEMINI_API_KEY
-        echo       - WAVESPEED_API_KEY
-    ) else (
-        echo    ⚠️  Arquivo .env.example não encontrado
-    )
-) else (
-    echo    ✓ Arquivo .env já existe
+echo    Instalando dependencias Python...
+pip install -r requirements.txt
+if %errorlevel% neq 0 (
+    echo [ERRO] Falha ao instalar dependencias Python
+    echo    Verifique sua conexao com a internet
+    pause
+    exit /b 1
 )
+echo    [OK] Dependencias Python instaladas
 
-:: Criar diretórios necessários
+:: Criar diretorios necessarios
 if not exist "storage" mkdir storage
 if not exist "storage\temp" mkdir storage\temp
 if not exist "storage\outputs" mkdir storage\outputs
 if not exist "storage\music" mkdir storage\music
-echo    ✓ Diretórios de storage criados
+echo    [OK] Diretorios de storage criados
 
 cd /d "%~dp0"
 
 :: ============================================
-:: INSTALAR DEPENDÊNCIAS NODE.JS
+:: INSTALAR DEPENDENCIAS NODE.JS
 :: ============================================
 echo.
-echo [6/7] Instalando dependências do Frontend...
+echo [6/7] Instalando dependencias do Frontend...
 
 cd /d "%~dp0frontend"
-
-if not exist "node_modules" (
-    echo    Executando npm install (pode demorar alguns minutos)...
-    call npm install --silent
-    if %errorlevel% neq 0 (
-        echo ❌ ERRO: Falha ao instalar dependências Node.js
-        pause
-        exit /b 1
-    )
-) else (
-    echo    Atualizando dependências...
-    call npm install --silent
+if %errorlevel% neq 0 (
+    echo [ERRO] Pasta frontend nao encontrada!
+    pause
+    exit /b 1
 )
-echo    ✓ Dependências do Frontend instaladas
+
+echo    Executando npm install (pode demorar alguns minutos)...
+call npm install
+if %errorlevel% neq 0 (
+    echo [ERRO] Falha ao instalar dependencias Node.js
+    echo    Tente executar manualmente: cd frontend ^&^& npm install
+    pause
+    exit /b 1
+)
+echo    [OK] Dependencias do Frontend instaladas
 
 cd /d "%~dp0"
 
 :: ============================================
-:: CRIAR SCRIPTS DE EXECUÇÃO
+:: CRIAR SCRIPTS DE EXECUCAO
 :: ============================================
 echo.
-echo [7/7] Criando scripts de execução...
+echo [7/7] Criando scripts de execucao...
 
-:: Script para iniciar apenas o backend
-echo @echo off > start-backend.bat
-echo chcp 65001 ^>nul >> start-backend.bat
-echo title Bambi Express - Backend >> start-backend.bat
-echo cd /d "%%~dp0backend" >> start-backend.bat
-echo call venv\Scripts\activate.bat >> start-backend.bat
-echo echo. >> start-backend.bat
-echo echo ========================================== >> start-backend.bat
-echo echo   Bambi Express - Backend API >> start-backend.bat
-echo echo   http://localhost:8000 >> start-backend.bat
-echo echo ========================================== >> start-backend.bat
-echo echo. >> start-backend.bat
-echo python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000 >> start-backend.bat
+:: Script para iniciar o backend
+(
+echo @echo off
+echo title Bambi Express - Backend
+echo cd /d "%%~dp0backend"
+echo call venv\Scripts\activate.bat
+echo echo.
+echo echo ==========================================
+echo echo   Bambi Express - Backend API
+echo echo   http://localhost:8000
+echo echo ==========================================
+echo echo.
+echo python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+echo pause
+) > start-backend.bat
 
-:: Script para iniciar apenas o frontend
-echo @echo off > start-frontend.bat
-echo chcp 65001 ^>nul >> start-frontend.bat
-echo title Bambi Express - Frontend >> start-frontend.bat
-echo cd /d "%%~dp0frontend" >> start-frontend.bat
-echo echo. >> start-frontend.bat
-echo echo ========================================== >> start-frontend.bat
-echo echo   Bambi Express - Frontend >> start-frontend.bat
-echo echo   http://localhost:3000 >> start-frontend.bat
-echo echo ========================================== >> start-frontend.bat
-echo echo. >> start-frontend.bat
-echo npm run dev >> start-frontend.bat
+:: Script para iniciar o frontend
+(
+echo @echo off
+echo title Bambi Express - Frontend
+echo cd /d "%%~dp0frontend"
+echo echo.
+echo echo ==========================================
+echo echo   Bambi Express - Frontend
+echo echo   http://localhost:3000
+echo echo ==========================================
+echo echo.
+echo call npm run dev
+echo pause
+) > start-frontend.bat
 
 :: Script para iniciar tudo
-echo @echo off > start.bat
-echo chcp 65001 ^>nul >> start.bat
-echo title Bambi Express >> start.bat
-echo echo. >> start.bat
-echo echo Iniciando Bambi Express... >> start.bat
-echo echo. >> start.bat
-echo start "Backend" cmd /k "%%~dp0start-backend.bat" >> start.bat
-echo timeout /t 3 /nobreak ^>nul >> start.bat
-echo start "Frontend" cmd /k "%%~dp0start-frontend.bat" >> start.bat
-echo timeout /t 5 /nobreak ^>nul >> start.bat
-echo start http://localhost:3000 >> start.bat
+(
+echo @echo off
+echo title Bambi Express
+echo echo.
+echo echo Iniciando Bambi Express...
+echo echo.
+echo start "Backend" cmd /k "%%~dp0start-backend.bat"
+echo timeout /t 5 /nobreak ^>nul
+echo start "Frontend" cmd /k "%%~dp0start-frontend.bat"
+echo timeout /t 8 /nobreak ^>nul
+echo start http://localhost:3000
+) > start.bat
 
-echo    ✓ Scripts criados: start.bat, start-backend.bat, start-frontend.bat
+echo    [OK] Scripts criados: start.bat, start-backend.bat, start-frontend.bat
 
 :: ============================================
-:: FINALIZAÇÃO
+:: FINALIZACAO
 :: ============================================
 echo.
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║                                                              ║
-echo ║                 ✓ INSTALAÇÃO CONCLUÍDA!                      ║
-echo ║                                                              ║
-echo ╚══════════════════════════════════════════════════════════════╝
+echo ============================================================
+echo.
+echo              INSTALACAO CONCLUIDA COM SUCESSO!
+echo.
+echo ============================================================
 echo.
 
 if defined FFMPEG_MISSING (
-    echo ⚠️  ATENÇÃO: Instale o FFMPEG antes de usar!
+    echo [ATENCAO] Instale o FFMPEG antes de usar!
     echo.
 )
 
-echo PRÓXIMOS PASSOS:
+echo PROXIMOS PASSOS:
 echo.
-echo    1. Edite o arquivo backend\.env com suas API keys
+echo    1. Configure suas API keys na interface web
+echo       (Configuracoes ^> APIs)
 echo.
-echo    2. Execute start.bat para iniciar a aplicação
-echo       (ou use start-backend.bat e start-frontend.bat separadamente)
+echo    2. Execute start.bat para iniciar a aplicacao
 echo.
 echo    3. Acesse http://localhost:3000 no navegador
 echo.
-echo ═══════════════════════════════════════════════════════════════
+echo ============================================================
 echo.
 pause
