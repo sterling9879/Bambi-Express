@@ -258,3 +258,156 @@ async def get_available_voices():
         return VoicesResponse(voices=voices)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============== GPU / LOCAL IMAGE GENERATION ==============
+
+
+class GPUInfoResponse(BaseModel):
+    available: bool
+    name: Optional[str] = None
+    vram_total_gb: Optional[float] = None
+    vram_free_gb: Optional[float] = None
+    compute_capability: Optional[str] = None
+    recommended_mode: Optional[str] = None
+    error: Optional[str] = None
+
+
+class ImageProviderRequest(BaseModel):
+    provider: Literal["local", "wavespeed"]
+    vram_mode: str = "auto"  # "4gb", "6gb", "8gb", "auto"
+
+
+class ModelInfoResponse(BaseModel):
+    mode: str
+    model_name: str
+    hf_id: str
+    max_resolution: int
+    default_steps: int
+    loaded: bool
+    quantized: bool
+
+
+class TestGenerationResponse(BaseModel):
+    status: str
+    time_seconds: float
+    image_size_bytes: int
+    model: ModelInfoResponse
+
+
+@router.get("/gpu", response_model=GPUInfoResponse)
+async def get_gpu_config():
+    """Retorna informacoes da GPU disponivel."""
+    try:
+        from ..services.flux_local import get_gpu_info
+        info = get_gpu_info()
+        return GPUInfoResponse(**info)
+    except Exception as e:
+        return GPUInfoResponse(available=False, error=str(e))
+
+
+@router.get("/gpu/models")
+async def list_available_models():
+    """Lista todos os modelos disponiveis por VRAM."""
+    from ..services.flux_local import MODELS_CONFIG
+
+    return {
+        mode: {
+            "name": config["name"],
+            "hf_id": config["hf_id"],
+            "max_resolution": config["max_resolution"],
+            "default_steps": config["default_steps"],
+            "vram_required": mode,
+            "quantized": config.get("quantized", False),
+        }
+        for mode, config in MODELS_CONFIG.items()
+    }
+
+
+@router.post("/image-provider")
+async def set_image_provider(request: ImageProviderRequest):
+    """Configura o provider de imagens (local ou wavespeed)."""
+    config = get_config()
+
+    if request.provider == "local":
+        try:
+            from ..services.flux_local import get_generator
+            generator = get_generator(request.vram_mode)
+            generator.load_model()  # Pre-carrega o modelo
+
+            # Atualizar config
+            config.gpu.provider = "local"
+            config.gpu.vram_mode = request.vram_mode
+            config.gpu.enabled = True
+            save_config(config)
+
+            return {
+                "status": "ok",
+                "provider": "local",
+                "model": generator.get_model_info()
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    else:
+        # Descarregar modelo local se estiver carregado
+        try:
+            from ..services.flux_local import unload_generator
+            unload_generator()
+        except Exception:
+            pass
+
+        config.gpu.provider = "wavespeed"
+        config.gpu.enabled = False
+        save_config(config)
+
+        return {"status": "ok", "provider": "wavespeed"}
+
+
+@router.post("/gpu/load-model", response_model=ModelInfoResponse)
+async def load_local_model(vram_mode: str = "auto"):
+    """Carrega modelo local na GPU."""
+    try:
+        from ..services.flux_local import get_generator
+        generator = get_generator(vram_mode)
+        generator.load_model()
+
+        info = generator.get_model_info()
+        return ModelInfoResponse(**info)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/gpu/unload-model")
+async def unload_local_model():
+    """Descarrega modelo da GPU para liberar memoria."""
+    try:
+        from ..services.flux_local import unload_generator
+        unload_generator()
+        return {"status": "unloaded"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/gpu/test-generation")
+async def test_generation(prompt: str = "A beautiful sunset over mountains, cinematic lighting, 8k"):
+    """Testa geracao de imagem local."""
+    try:
+        from ..services.flux_local import get_generator
+        import time
+
+        generator = get_generator()
+        if not generator.pipe:
+            generator.load_model()
+
+        start = time.time()
+        image_bytes = await generator.generate(prompt, width=512, height=512)
+        elapsed = time.time() - start
+
+        return {
+            "status": "ok",
+            "time_seconds": round(elapsed, 2),
+            "image_size_bytes": len(image_bytes),
+            "model": generator.get_model_info()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -475,3 +475,264 @@ class WaveSpeedGenerator:
                 "connected": False,
                 "error": str(e)
             }
+
+
+class LocalImageGenerator:
+    """
+    Gera imagens usando GPU local com Flux/SDXL.
+
+    Features:
+    - Suporte a GPUs com 4GB, 6GB e 8GB de VRAM
+    - Fallback automatico para WaveSpeed API
+    - Processamento em batch similar ao WaveSpeedGenerator
+    """
+
+    def __init__(
+        self,
+        vram_mode: str = "auto",
+        output_dir: str = "temp",
+        log_callback: Optional[Callable[[str], None]] = None,
+        fallback_api_key: Optional[str] = None,
+        fallback_model: str = "flux-dev-ultra-fast",
+    ):
+        self.vram_mode = vram_mode
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.log_callback = log_callback
+        self.fallback_api_key = fallback_api_key
+        self.fallback_model = fallback_model
+        self._generator = None
+        self._fallback_generator = None
+
+    def _log(self, message: str):
+        """Log message to both logger and callback if set."""
+        logger.info(message)
+        if self.log_callback:
+            self.log_callback(message)
+
+    def _get_generator(self):
+        """Lazy initialization do gerador local."""
+        if self._generator is None:
+            try:
+                from .flux_local import get_generator
+                self._generator = get_generator(self.vram_mode)
+            except Exception as e:
+                self._log(f"WARNING: Falha ao inicializar gerador local: {e}")
+                raise
+        return self._generator
+
+    def _get_fallback_generator(self) -> Optional['WaveSpeedGenerator']:
+        """Retorna gerador WaveSpeed para fallback."""
+        if self._fallback_generator is None and self.fallback_api_key:
+            self._fallback_generator = WaveSpeedGenerator(
+                api_key=self.fallback_api_key,
+                model=self.fallback_model,
+                output_dir=str(self.output_dir),
+                log_callback=self.log_callback
+            )
+        return self._fallback_generator
+
+    async def generate_all(
+        self,
+        scenes: List[Scene],
+        max_concurrent: int = 2,  # Menor para GPU local
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> List[GeneratedImage]:
+        """
+        Gera imagens para todas as cenas usando GPU local.
+
+        Args:
+            scenes: Lista de Scene do scene_analyzer
+            max_concurrent: Maximo de requisicoes simultaneas
+            progress_callback: Callback (completed, total)
+
+        Returns:
+            Lista de GeneratedImage
+        """
+        results: dict[int, GeneratedImage] = {}
+        failed_scenes: List[Scene] = []
+        completed = 0
+        total = len(scenes)
+
+        try:
+            generator = self._get_generator()
+            if not generator.pipe:
+                self._log("Carregando modelo local...")
+                generator.load_model()
+                self._log("Modelo local carregado!")
+
+            # Obter resolucao do modelo
+            max_res = generator.config["max_resolution"]
+            self._log(f"Usando modelo: {generator.config['name']} ({max_res}x{max_res})")
+
+            # Gerar imagens uma a uma (GPU local e mais estavel assim)
+            for scene in scenes:
+                try:
+                    start_time = time.time()
+                    self._log(f"Gerando imagem local para cena {scene.scene_index}...")
+
+                    output_path = self.output_dir / f"scene_{scene.scene_index}.png"
+
+                    await generator.generate_to_file(
+                        prompt=scene.image_prompt,
+                        output_path=str(output_path),
+                        width=max_res,
+                        height=max_res,
+                    )
+
+                    generation_time = int((time.time() - start_time) * 1000)
+
+                    results[scene.scene_index] = GeneratedImage(
+                        scene_index=scene.scene_index,
+                        image_path=str(output_path),
+                        prompt_used=scene.image_prompt,
+                        generation_time_ms=generation_time
+                    )
+
+                    self._log(f"Imagem local gerada para cena {scene.scene_index} em {generation_time}ms")
+
+                except Exception as e:
+                    self._log(f"WARNING: Erro na geracao local da cena {scene.scene_index}: {e}")
+                    failed_scenes.append(scene)
+
+                finally:
+                    completed += 1
+                    if progress_callback:
+                        progress_callback(completed, total)
+
+        except Exception as e:
+            self._log(f"ERROR: Falha ao inicializar gerador local: {e}")
+            # Todas as cenas falharam
+            failed_scenes = list(scenes)
+
+        # Tentar fallback para cenas que falharam
+        if failed_scenes and self.fallback_api_key:
+            self._log(f"Usando fallback WaveSpeed para {len(failed_scenes)} cenas...")
+            fallback = self._get_fallback_generator()
+            if fallback:
+                try:
+                    fallback_results = await fallback.generate_all(
+                        failed_scenes,
+                        max_concurrent=3,
+                        progress_callback=None  # Ja contamos no progress principal
+                    )
+                    for result in fallback_results:
+                        results[result.scene_index] = result
+                        if result.scene_index in [s.scene_index for s in failed_scenes]:
+                            failed_scenes = [s for s in failed_scenes if s.scene_index != result.scene_index]
+                except Exception as e:
+                    self._log(f"WARNING: Fallback tambem falhou: {e}")
+
+        # Criar placeholders para as que ainda falharam
+        if failed_scenes:
+            self._log(f"WARNING: Criando placeholders para {len(failed_scenes)} cenas")
+            for scene in failed_scenes:
+                results[scene.scene_index] = await self._create_placeholder_image(scene)
+
+        # Ordenar resultados
+        return [results[scene.scene_index] for scene in scenes if scene.scene_index in results]
+
+    async def _create_placeholder_image(self, scene: Scene) -> GeneratedImage:
+        """Cria uma imagem placeholder quando a geracao falha."""
+        from PIL import Image, ImageDraw, ImageFont
+
+        # Cores baseadas no mood
+        mood_colors = {
+            "alegre": (255, 223, 128),
+            "animado": (255, 165, 79),
+            "calmo": (135, 206, 235),
+            "dramatico": (70, 70, 100),
+            "inspirador": (255, 215, 0),
+            "melancolico": (105, 105, 135),
+            "raiva": (178, 34, 34),
+            "romantico": (255, 182, 193),
+            "sombrio": (47, 47, 61),
+            "vibrante": (255, 99, 71),
+        }
+
+        bg_color = mood_colors.get(scene.mood, (100, 100, 100))
+        img = Image.new('RGB', (1024, 1024), bg_color)
+        draw = ImageDraw.Draw(img)
+
+        text = f"Cena {scene.scene_index + 1}"
+
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 48)
+        except:
+            font = ImageFont.load_default()
+
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        x = (1024 - text_width) // 2
+        y = (1024 - text_height) // 2
+
+        text_color = (255, 255, 255) if sum(bg_color) < 400 else (0, 0, 0)
+        draw.text((x, y), text, fill=text_color, font=font)
+
+        output_path = self.output_dir / f"scene_{scene.scene_index}.png"
+        img.save(output_path)
+
+        self._log(f"Placeholder criado para cena {scene.scene_index}")
+
+        return GeneratedImage(
+            scene_index=scene.scene_index,
+            image_path=str(output_path),
+            prompt_used=f"[PLACEHOLDER] {scene.image_prompt[:100]}...",
+            generation_time_ms=0
+        )
+
+
+def get_image_generator(
+    config,
+    output_dir: str = "temp",
+    log_callback: Optional[Callable[[str], None]] = None,
+):
+    """
+    Factory function para obter o gerador de imagens correto baseado na config.
+
+    Args:
+        config: FullConfig ou GPUConfig
+        output_dir: Diretorio de saida
+        log_callback: Callback para logs
+
+    Returns:
+        WaveSpeedGenerator ou LocalImageGenerator
+    """
+    # Extrair gpu config se for FullConfig
+    gpu_config = getattr(config, 'gpu', None)
+
+    if gpu_config and gpu_config.enabled and gpu_config.provider == "local":
+        # Usar gerador local
+        fallback_key = None
+        fallback_model = "flux-dev-ultra-fast"
+
+        # Configurar fallback se disponivel
+        api_config = getattr(config, 'api', None)
+        if api_config and gpu_config.auto_fallback_to_api:
+            wavespeed = getattr(api_config, 'wavespeed', None)
+            if wavespeed and wavespeed.api_key:
+                fallback_key = wavespeed.api_key
+                fallback_model = wavespeed.model
+
+        return LocalImageGenerator(
+            vram_mode=gpu_config.vram_mode if hasattr(gpu_config.vram_mode, 'value') else gpu_config.vram_mode,
+            output_dir=output_dir,
+            log_callback=log_callback,
+            fallback_api_key=fallback_key,
+            fallback_model=fallback_model,
+        )
+    else:
+        # Usar WaveSpeed
+        api_config = getattr(config, 'api', None)
+        if api_config:
+            wavespeed = api_config.wavespeed
+            return WaveSpeedGenerator(
+                api_key=wavespeed.api_key,
+                model=wavespeed.model,
+                resolution=wavespeed.resolution,
+                output_dir=output_dir,
+                log_callback=log_callback,
+            )
+        else:
+            raise ValueError("Configuracao de API nao encontrada")
