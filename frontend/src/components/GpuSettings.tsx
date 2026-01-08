@@ -55,7 +55,7 @@ export function GpuSettings() {
 
   const fetchGpuInfo = async () => {
     try {
-      const res = await api.get('/config/gpu');
+      const res = await api.get('/api/config/gpu');
       setGpuInfo(res.data);
       if (res.data.recommendedMode) {
         setVramMode(res.data.recommendedMode);
@@ -68,7 +68,7 @@ export function GpuSettings() {
 
   const fetchAvailableModels = async () => {
     try {
-      const res = await api.get('/config/gpu/models');
+      const res = await api.get('/api/config/gpu/models');
       setAvailableModels(res.data);
     } catch (e) {
       console.error('Erro ao buscar modelos:', e);
@@ -79,7 +79,7 @@ export function GpuSettings() {
     setLoading(true);
     setLoadingAction('loading');
     try {
-      const res = await api.post(`/config/gpu/load-model?vram_mode=${vramMode}`);
+      const res = await api.post(`/api/config/gpu/load-model?vram_mode=${vramMode}`);
       setModelInfo(res.data);
       toast.success('Modelo carregado com sucesso!');
     } catch (e: any) {
@@ -95,7 +95,7 @@ export function GpuSettings() {
     setLoading(true);
     setLoadingAction('unloading');
     try {
-      await api.post('/config/gpu/unload-model');
+      await api.post('/api/config/gpu/unload-model');
       setModelInfo(null);
       toast.success('Modelo descarregado');
     } catch (e) {
@@ -111,7 +111,7 @@ export function GpuSettings() {
     setLoadingAction('testing');
     setTestResult(null);
     try {
-      const res = await api.post('/config/gpu/test-generation');
+      const res = await api.post('/api/config/gpu/test-generation');
       setTestResult(res.data);
       setModelInfo(res.data.model);
       toast.success(`Imagem gerada em ${res.data.timeSeconds}s!`);
@@ -128,9 +128,9 @@ export function GpuSettings() {
     setLoading(true);
     setLoadingAction('switching');
     try {
-      const res = await api.post('/config/image-provider', {
+      const res = await api.post('/api/config/image-provider', {
         provider: newProvider,
-        vramMode: vramMode,
+        vram_mode: vramMode,
       });
       if (res.data.status === 'ok') {
         setProvider(newProvider);
