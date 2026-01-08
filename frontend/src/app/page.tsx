@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Settings, Music, Video, FileText, History } from 'lucide-react';
+import { Settings, Music, Video, FileText, History, Cpu } from 'lucide-react';
 import { ApiConfig } from '@/components/ConfigPanel/ApiConfig';
 import { MusicConfig } from '@/components/ConfigPanel/MusicConfig';
 import { FFmpegConfig } from '@/components/ConfigPanel/FFmpegConfig';
+import { GpuSettings } from '@/components/GpuSettings';
 import { MusicUploader } from '@/components/MusicLibrary/MusicUploader';
 import { MusicList } from '@/components/MusicLibrary/MusicList';
 import { TextEditor } from '@/components/Editor/TextEditor';
@@ -17,7 +18,7 @@ type Tab = 'editor' | 'config' | 'music' | 'history';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('editor');
-  const [configSection, setConfigSection] = useState<'api' | 'music' | 'ffmpeg'>('api');
+  const [configSection, setConfigSection] = useState<'api' | 'gpu' | 'music' | 'ffmpeg'>('api');
 
   const {
     isGenerating,
@@ -171,6 +172,7 @@ export default function Home() {
               <nav className="space-y-2">
                 {[
                   { id: 'api' as const, label: 'APIs', icon: Settings },
+                  { id: 'gpu' as const, label: 'GPU Local', icon: Cpu },
                   { id: 'music' as const, label: 'Música', icon: Music },
                   { id: 'ffmpeg' as const, label: 'Vídeo', icon: Video },
                 ].map((item) => (
@@ -192,6 +194,7 @@ export default function Home() {
             <div className="lg:col-span-3">
               <ErrorBoundary>
                 {configSection === 'api' && <ApiConfig />}
+                {configSection === 'gpu' && <GpuSettings />}
                 {configSection === 'music' && <MusicConfig />}
                 {configSection === 'ffmpeg' && <FFmpegConfig />}
               </ErrorBoundary>

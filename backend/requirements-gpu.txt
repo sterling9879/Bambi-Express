@@ -1,0 +1,57 @@
+# GPU-specific dependencies for local image generation
+# Install PyTorch with CUDA first:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#
+# Then install these packages:
+#   pip install -r requirements-gpu.txt
+
+# PyTorch with CUDA (install separately with correct CUDA version)
+# torch>=2.1.0
+# torchvision>=0.16.0
+
+# Diffusers and model loading
+diffusers>=0.30.0
+transformers>=4.44.0
+accelerate>=0.33.0
+safetensors>=0.4.0
+sentencepiece>=0.2.0
+
+# Quantization support (for 4-bit models)
+bitsandbytes>=0.43.0
+
+# Image processing (already in main requirements)
+# Pillow>=10.0.0
+
+# HuggingFace Hub for model downloads
+huggingface-hub>=0.24.0
+
+# Optional: xformers for memory optimization
+# xformers>=0.0.23
+
+# ============================================
+# Installation Guide:
+# ============================================
+#
+# 1. Check your CUDA version:
+#    nvidia-smi
+#
+# 2. Install PyTorch with matching CUDA:
+#    For CUDA 11.8:
+#      pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+#    For CUDA 12.1:
+#      pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#
+# 3. Install GPU requirements:
+#    pip install -r requirements-gpu.txt
+#
+# 4. (Optional) Login to HuggingFace for gated models:
+#    pip install huggingface_hub
+#    huggingface-cli login
+#
+# ============================================
+# VRAM Requirements:
+# ============================================
+# - 4GB VRAM: SDXL Turbo (512x512)
+# - 6GB VRAM: Flux Schnell NF4 (768x768)
+# - 8GB VRAM: Flux Schnell Full (1024x1024)
+#

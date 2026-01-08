@@ -160,11 +160,43 @@ export interface FFmpegConfig {
   audio: AudioConfig;
 }
 
+// GPU / Local Image Generation Types
+export type ImageProvider = 'wavespeed' | 'local';
+export type VramMode = 'auto' | '4gb' | '6gb' | '8gb';
+
+export interface GPUConfig {
+  enabled: boolean;
+  provider: ImageProvider;
+  vramMode: VramMode;
+  autoFallbackToApi: boolean;
+}
+
+export interface GPUInfo {
+  available: boolean;
+  name?: string;
+  vramTotalGb?: number;
+  vramFreeGb?: number;
+  computeCapability?: string;
+  recommendedMode?: string;
+  error?: string;
+}
+
+export interface ModelInfo {
+  mode: string;
+  modelName: string;
+  hfId: string;
+  maxResolution: number;
+  defaultSteps: number;
+  loaded: boolean;
+  quantized: boolean;
+}
+
 // Full Config
 export interface FullConfig {
   api: ApiConfig;
   music: MusicConfig;
   ffmpeg: FFmpegConfig;
+  gpu: GPUConfig;
 }
 
 // Job Types

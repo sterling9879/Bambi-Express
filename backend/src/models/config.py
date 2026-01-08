@@ -177,6 +177,29 @@ class MusicConfig(BaseModel):
     ai_config: Optional[AIMusicConfig] = None
 
 
+# ============== GPU / LOCAL IMAGE GENERATION ==============
+
+
+class ImageProvider(str, Enum):
+    WAVESPEED = "wavespeed"
+    LOCAL = "local"
+
+
+class VramMode(str, Enum):
+    AUTO = "auto"
+    VRAM_4GB = "4gb"
+    VRAM_6GB = "6gb"
+    VRAM_8GB = "8gb"
+
+
+class GPUConfig(BaseModel):
+    """Configuracao para geracao de imagens local com GPU."""
+    enabled: bool = False
+    provider: ImageProvider = ImageProvider.WAVESPEED
+    vram_mode: VramMode = VramMode.AUTO
+    auto_fallback_to_api: bool = True  # Se local falhar, usa WaveSpeed
+
+
 # ============== FULL CONFIG ==============
 
 
@@ -184,3 +207,4 @@ class FullConfig(BaseModel):
     api: ApiConfig = ApiConfig()
     music: MusicConfig = MusicConfig()
     ffmpeg: FFmpegConfig = FFmpegConfig()
+    gpu: GPUConfig = GPUConfig()
