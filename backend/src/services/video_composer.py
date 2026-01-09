@@ -522,7 +522,7 @@ class VideoComposer:
             return 60.0  # Fallback
 
     def _add_audio_to_video(self, video_path: str, audio_path: str, output_path: Path):
-        """Adiciona áudio ao vídeo final."""
+        """Adiciona áudio ao vídeo final, cortando na duração exata do áudio."""
         cfg = self.config
 
         # Garantir caminhos absolutos
@@ -541,6 +541,14 @@ class VideoComposer:
         if not Path(audio_path_abs).exists():
             raise RuntimeError(f"Audio file not found: {audio_path_abs}")
 
+        # Obter duração EXATA do áudio para forçar o vídeo a ter essa duração
+        audio_duration = self._get_audio_duration(audio_path_abs)
+        video_duration = self._get_video_duration(Path(video_path_abs))
+        logger.info(f"  Audio duration: {audio_duration:.2f}s, Video duration: {video_duration:.2f}s")
+
+        if video_duration > audio_duration + 1:
+            logger.warning(f"Video is {video_duration - audio_duration:.1f}s longer than audio, will be trimmed")
+
         cmd = [
             "ffmpeg", "-y",
             "-threads", str(FFMPEG_THREADS),
@@ -551,6 +559,7 @@ class VideoComposer:
             "-b:a", f"{cfg.audio.bitrate}k",
             "-map", "0:v:0",
             "-map", "1:a:0",
+            "-t", str(audio_duration),  # Forçar duração igual ao áudio
             "-shortest",
             "-movflags", "+faststart",
         ]
@@ -561,6 +570,27 @@ class VideoComposer:
         cmd.append(output_path_abs)
 
         self._run_ffmpeg(cmd, "add_audio", timeout=600)
+
+    def _get_audio_duration(self, audio_path: str) -> float:
+        """Obtém duração do áudio usando ffprobe."""
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe", "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    audio_path
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            duration = float(result.stdout.strip())
+            logger.debug(f"Audio duration for {audio_path}: {duration:.2f}s")
+            return duration
+        except Exception as e:
+            logger.warning(f"Failed to get audio duration for {audio_path}: {e}")
+            return 0.0
 
     def _compose_single_pass(
         self,
@@ -848,6 +878,7 @@ class VideoComposer:
             "-c:a", "aac" if cfg.audio.codec == "aac" else "libmp3lame",
             "-b:a", f"{cfg.audio.bitrate}k",
             "-r", str(cfg.fps),
+            "-shortest",  # Cortar na duração do stream mais curto (áudio)
             "-movflags", "+faststart",
             "-pix_fmt", "yuv420p",
             "-max_muxing_queue_size", "1024",
