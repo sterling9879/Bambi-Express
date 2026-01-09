@@ -282,7 +282,10 @@ class ModelInfoResponse(BaseModel):
     mode: str
     model_name: str
     hf_id: str
-    max_resolution: int
+    width: Optional[int] = None
+    height: Optional[int] = None
+    resolution: Optional[str] = None
+    max_resolution: Optional[int] = None  # Backwards compat
     default_steps: int
     loaded: bool
     quantized: bool
@@ -315,7 +318,9 @@ async def list_available_models():
         mode: {
             "name": config["name"],
             "hf_id": config["hf_id"],
-            "max_resolution": config["max_resolution"],
+            "width": config["width"],
+            "height": config["height"],
+            "resolution": f"{config['width']}x{config['height']}",
             "default_steps": config["default_steps"],
             "vram_required": mode,
             "quantized": config.get("quantized", False),

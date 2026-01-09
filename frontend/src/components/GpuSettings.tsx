@@ -19,7 +19,9 @@ interface ModelInfo {
   mode: string;
   modelName: string;
   hfId: string;
-  maxResolution: number;
+  width: number;
+  height: number;
+  resolution: string;
   defaultSteps: number;
   loaded: boolean;
   quantized: boolean;
@@ -28,7 +30,9 @@ interface ModelInfo {
 interface AvailableModel {
   name: string;
   hfId: string;
-  maxResolution: number;
+  width: number;
+  height: number;
+  resolution: string;
   defaultSteps: number;
   vramRequired: string;
   quantized: boolean;
@@ -171,15 +175,15 @@ export function GpuSettings() {
   const getVramModeLabel = (mode: string) => {
     const model = availableModels[mode];
     if (model) {
-      return `${mode.toUpperCase()} - ${model.name} (${model.maxResolution}x${model.maxResolution})`;
+      return `${mode.toUpperCase()} - ${model.name} (${model.resolution})`;
     }
     switch (mode) {
       case '4gb':
-        return '4GB - SDXL Turbo (512x512)';
+        return '4GB - SDXL Turbo (896x512)';
       case '6gb':
-        return '6GB - Flux Schnell (768x768)';
+        return '6GB - SDXL Turbo (1024x576)';
       case '8gb':
-        return '8GB - Flux Schnell Full (1024x1024)';
+        return '8GB - SDXL Turbo (1280x720)';
       default:
         return 'Auto (Detectar)';
     }
@@ -319,9 +323,9 @@ export function GpuSettings() {
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
               >
                 <option value="auto">Auto (Detectar VRAM)</option>
-                <option value="4gb">4GB - SDXL Turbo (512x512)</option>
-                <option value="6gb">6GB - Flux Schnell NF4 (768x768)</option>
-                <option value="8gb">8GB - Flux Schnell Full (1024x1024)</option>
+                <option value="4gb">4GB - SDXL Turbo (896x512)</option>
+                <option value="6gb">6GB - SDXL Turbo (1024x576)</option>
+                <option value="8gb">8GB - SDXL Turbo (1280x720)</option>
               </select>
               <p className="text-xs text-gray-500 mt-1">
                 Escolha o modelo baseado na VRAM disponivel na sua GPU
@@ -384,9 +388,9 @@ export function GpuSettings() {
                     <span className="ml-2 text-gray-900 dark:text-white">{modelInfo.modelName}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500 dark:text-gray-400">Resolucao Max:</span>
+                    <span className="text-gray-500 dark:text-gray-400">Resolucao:</span>
                     <span className="ml-2 text-gray-900 dark:text-white">
-                      {modelInfo.maxResolution}x{modelInfo.maxResolution}
+                      {modelInfo.resolution || `${modelInfo.width}x${modelInfo.height}`}
                     </span>
                   </div>
                   <div>

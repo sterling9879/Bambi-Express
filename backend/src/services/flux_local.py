@@ -13,7 +13,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Constantes dos modelos
+# Constantes dos modelos - Otimizado para 16:9 (1280x720)
 MODELS_CONFIG = {
     "4gb": {
         "name": "SDXL Turbo",
@@ -23,7 +23,8 @@ MODELS_CONFIG = {
         "variant": "fp16",
         "default_steps": 1,
         "guidance_scale": 0.0,
-        "max_resolution": 512,
+        "width": 896,
+        "height": 512,
         "quantized": False,
     },
     "6gb": {
@@ -32,9 +33,10 @@ MODELS_CONFIG = {
         "pipeline_class": "AutoPipelineForText2Image",
         "torch_dtype": "float16",
         "variant": "fp16",
-        "default_steps": 2,
+        "default_steps": 1,
         "guidance_scale": 0.0,
-        "max_resolution": 640,
+        "width": 1024,
+        "height": 576,
         "quantized": False,
     },
     "8gb": {
@@ -43,9 +45,10 @@ MODELS_CONFIG = {
         "pipeline_class": "AutoPipelineForText2Image",
         "torch_dtype": "float16",
         "variant": "fp16",
-        "default_steps": 4,
+        "default_steps": 2,
         "guidance_scale": 0.0,
-        "max_resolution": 768,
+        "width": 1280,
+        "height": 720,
         "quantized": False,
     },
 }
@@ -210,9 +213,11 @@ class FluxLocalGenerator:
 
         torch = self._get_torch()
 
-        max_res = self.config["max_resolution"]
-        width = min(width or max_res, max_res)
-        height = min(height or max_res, max_res)
+        # Usar dimensoes do config (16:9) se nao especificado
+        cfg_width = self.config["width"]
+        cfg_height = self.config["height"]
+        width = width or cfg_width
+        height = height or cfg_height
         steps = num_inference_steps or self.config["default_steps"]
         guidance = self.config["guidance_scale"]
 
@@ -274,7 +279,9 @@ class FluxLocalGenerator:
             "mode": self.vram_mode,
             "model_name": self.config["name"],
             "hf_id": self.config["hf_id"],
-            "max_resolution": self.config["max_resolution"],
+            "width": self.config["width"],
+            "height": self.config["height"],
+            "resolution": f"{self.config['width']}x{self.config['height']}",
             "default_steps": self.config["default_steps"],
             "loaded": self.pipe is not None,
             "quantized": self.config.get("quantized", False),

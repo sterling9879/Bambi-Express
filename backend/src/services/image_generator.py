@@ -561,9 +561,10 @@ class LocalImageGenerator:
                 generator.load_model()
                 self._log("Modelo local carregado!")
 
-            # Obter resolucao do modelo
-            max_res = generator.config["max_resolution"]
-            self._log(f"Usando modelo: {generator.config['name']} ({max_res}x{max_res})")
+            # Obter resolucao do modelo (16:9)
+            img_width = generator.config["width"]
+            img_height = generator.config["height"]
+            self._log(f"Usando modelo: {generator.config['name']} ({img_width}x{img_height})")
 
             # Gerar imagens uma a uma (GPU local e mais estavel assim)
             for scene in scenes:
@@ -576,8 +577,8 @@ class LocalImageGenerator:
                     await generator.generate_to_file(
                         prompt=scene.image_prompt,
                         output_path=str(output_path),
-                        width=max_res,
-                        height=max_res,
+                        width=img_width,
+                        height=img_height,
                     )
 
                     generation_time = int((time.time() - start_time) * 1000)
