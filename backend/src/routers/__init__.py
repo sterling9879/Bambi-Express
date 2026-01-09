@@ -6,10 +6,12 @@ from .config import router as config_router
 from .music import router as music_router
 from .video import router as video_router
 from .jobs import router as jobs_router
+from .batch import router as batch_router
 
 __all__ = [
     "config_router",
     "music_router",
     "video_router",
     "jobs_router",
+    "batch_router",
 ]
