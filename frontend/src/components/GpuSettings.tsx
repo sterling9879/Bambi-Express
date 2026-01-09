@@ -51,7 +51,23 @@ export function GpuSettings() {
   useEffect(() => {
     fetchGpuInfo();
     fetchAvailableModels();
+    fetchCurrentConfig();
   }, []);
+
+  const fetchCurrentConfig = async () => {
+    try {
+      const res = await api.get('/api/config');
+      if (res.data.gpu) {
+        const gpuConfig = res.data.gpu;
+        setProvider(gpuConfig.provider === 'local' ? 'local' : 'wavespeed');
+        if (gpuConfig.vram_mode) {
+          setVramMode(gpuConfig.vram_mode);
+        }
+      }
+    } catch (e) {
+      console.error('Erro ao buscar config:', e);
+    }
+  };
 
   const fetchGpuInfo = async () => {
     try {
