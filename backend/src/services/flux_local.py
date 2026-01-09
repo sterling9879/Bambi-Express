@@ -1,11 +1,6 @@
 """
 Modulo de geracao de imagens local usando Flux/SDXL.
 Suporta GPUs com 4GB, 6GB e 8GB de VRAM.
-
-Modelos:
-- 4GB: SDXL Turbo (stabilityai/sdxl-turbo) - 512x512
-- 6GB: Flux Schnell NF4 (sayakpaul/flux.1-schnell-nf4-pkg) - 768x768
-- 8GB: Flux Schnell Full (black-forest-labs/FLUX.1-schnell) - 1024x1024
 """
 
 import gc
@@ -32,27 +27,26 @@ MODELS_CONFIG = {
         "quantized": False,
     },
     "6gb": {
-        "name": "Flux Schnell NF4",
-        "hf_id": "sayakpaul/flux.1-schnell-nf4-pkg",
-        "hf_id_base": "black-forest-labs/FLUX.1-schnell",
-        "pipeline_class": "FluxPipeline",
-        "torch_dtype": "bfloat16",
+        "name": "SDXL Turbo",
+        "hf_id": "stabilityai/sdxl-turbo",
+        "pipeline_class": "AutoPipelineForText2Image",
+        "torch_dtype": "float16",
+        "variant": "fp16",
+        "default_steps": 2,
+        "guidance_scale": 0.0,
+        "max_resolution": 640,
+        "quantized": False,
+    },
+    "8gb": {
+        "name": "SDXL Turbo",
+        "hf_id": "stabilityai/sdxl-turbo",
+        "pipeline_class": "AutoPipelineForText2Image",
+        "torch_dtype": "float16",
+        "variant": "fp16",
         "default_steps": 4,
         "guidance_scale": 0.0,
         "max_resolution": 768,
-        "quantized": True,
-        "max_sequence_length": 256,
-    },
-    "8gb": {
-        "name": "Flux Schnell NF4 Full",
-        "hf_id": "black-forest-labs/FLUX.1-schnell",
-        "pipeline_class": "FluxPipeline",
-        "torch_dtype": "bfloat16",
-        "default_steps": 4,
-        "guidance_scale": 0.0,
-        "max_resolution": 1024,
-        "quantized": True,
-        "max_sequence_length": 256,
+        "quantized": False,
     },
 }
 
@@ -79,15 +73,7 @@ def flush_memory():
 
 
 def detect_vram() -> str:
-    """
-    Detecta VRAM disponivel e retorna o modo recomendado.
-
-    Returns:
-        "4gb", "6gb" ou "8gb"
-
-    Raises:
-        RuntimeError: Se CUDA nao estiver disponivel ou VRAM insuficiente
-    """
+    """Detecta VRAM disponivel e retorna o modo recomendado."""
     try:
         import torch
     except ImportError:
@@ -140,13 +126,7 @@ def get_gpu_info() -> dict:
 
 
 class FluxLocalGenerator:
-    """
-    Gerador de imagens local com suporte a multiplos modelos.
-
-    Args:
-        vram_mode: "4gb", "6gb", "8gb" ou "auto" (detecta automaticamente)
-        device: "cuda" ou "cpu"
-    """
+    """Gerador de imagens local com suporte a multiplos modelos."""
 
     def __init__(
         self,
@@ -158,7 +138,6 @@ class FluxLocalGenerator:
         self.current_mode = None
         self._torch = None
 
-        # Detectar modo se auto
         if vram_mode == "auto":
             self.vram_mode = detect_vram()
         else:
@@ -187,13 +166,11 @@ class FluxLocalGenerator:
             return torch.float16
 
     def load_model(self) -> None:
-        """Carrega o modelo apropriado para o modo de VRAM."""
-
+        """Carrega o modelo SDXL Turbo."""
         if self.pipe is not None and self.current_mode == self.vram_mode:
             logger.info("Modelo ja carregado")
             return
 
-        # Limpar modelo anterior
         if self.pipe is not None:
             del self.pipe
             self.pipe = None
@@ -201,134 +178,23 @@ class FluxLocalGenerator:
 
         logger.info(f"Carregando modelo: {self.config['name']}...")
 
-        if self.vram_mode == "4gb":
-            self._load_sdxl_turbo()
-        elif self.vram_mode == "6gb":
-            self._load_flux_6gb()
-        elif self.vram_mode == "8gb":
-            self._load_flux_8gb()
-
-        self.current_mode = self.vram_mode
-        flush_memory()
-        logger.info("Modelo carregado com sucesso!")
-
-    def _load_sdxl_turbo(self):
-        """Carrega SDXL Turbo para 4GB VRAM."""
         from diffusers import AutoPipelineForText2Image
-
         torch = self._get_torch()
 
         self.pipe = AutoPipelineForText2Image.from_pretrained(
             self.config["hf_id"],
             torch_dtype=self._get_torch_dtype(self.config["torch_dtype"]),
-            variant=self.config["variant"],
+            variant=self.config.get("variant"),
             safety_checker=None,
         )
         self.pipe.to(self.device)
 
-        # Otimizacoes
         if hasattr(self.pipe, 'enable_attention_slicing'):
             self.pipe.enable_attention_slicing()
 
-    def _load_flux_6gb(self):
-        """Carrega Flux Schnell NF4 pre-quantizado para 6GB VRAM."""
-        from diffusers import FluxPipeline, FluxTransformer2DModel
-        from transformers import T5EncoderModel
-        from diffusers import BitsAndBytesConfig as DiffusersBnBConfig
-        from transformers import BitsAndBytesConfig as TransformersBnBConfig
-
-        torch = self._get_torch()
-
-        # Config quantizacao
-        quant_config_t5 = TransformersBnBConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16
-        )
-
-        quant_config_transformer = DiffusersBnBConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16
-        )
-
-        # Carregar componentes quantizados
-        text_encoder_2 = T5EncoderModel.from_pretrained(
-            self.config["hf_id"],
-            subfolder="text_encoder_2",
-            quantization_config=quant_config_t5,
-            torch_dtype=torch.bfloat16,
-            device_map="auto"
-        )
-
-        transformer = FluxTransformer2DModel.from_pretrained(
-            self.config["hf_id"],
-            subfolder="transformer",
-            quantization_config=quant_config_transformer,
-            torch_dtype=torch.bfloat16,
-            device_map="auto"
-        )
-
-        # Pipeline completo
-        self.pipe = FluxPipeline.from_pretrained(
-            self.config["hf_id_base"],
-            transformer=transformer,
-            text_encoder_2=text_encoder_2,
-            torch_dtype=torch.bfloat16,
-        )
-        self.pipe.enable_model_cpu_offload()
-
-    def _load_flux_8gb(self):
-        """Carrega Flux Schnell com quantizacao on-the-fly para 8GB VRAM."""
-        from diffusers import FluxPipeline, FluxTransformer2DModel
-        from transformers import T5EncoderModel
-        from diffusers import BitsAndBytesConfig as DiffusersBnBConfig
-        from transformers import BitsAndBytesConfig as TransformersBnBConfig
-
-        torch = self._get_torch()
-
-        # Config quantizacao
-        quant_config_t5 = TransformersBnBConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16
-        )
-
-        quant_config_transformer = DiffusersBnBConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16
-        )
-
-        # Carregar T5 quantizado
-        text_encoder_2 = T5EncoderModel.from_pretrained(
-            self.config["hf_id"],
-            subfolder="text_encoder_2",
-            quantization_config=quant_config_t5,
-            torch_dtype=torch.bfloat16,
-        )
-
-        # Carregar transformer quantizado
-        transformer = FluxTransformer2DModel.from_pretrained(
-            self.config["hf_id"],
-            subfolder="transformer",
-            quantization_config=quant_config_transformer,
-            torch_dtype=torch.bfloat16,
-        )
-
-        # Montar pipeline
-        self.pipe = FluxPipeline.from_pretrained(
-            self.config["hf_id"],
-            transformer=transformer,
-            text_encoder_2=text_encoder_2,
-            torch_dtype=torch.bfloat16,
-        )
-
-        # Otimizacoes
-        self.pipe.enable_model_cpu_offload()
-        if hasattr(self.pipe, 'vae'):
-            self.pipe.vae.enable_slicing()
-            self.pipe.vae.enable_tiling()
+        self.current_mode = self.vram_mode
+        flush_memory()
+        logger.info("Modelo carregado com sucesso!")
 
     async def generate(
         self,
@@ -338,38 +204,22 @@ class FluxLocalGenerator:
         num_inference_steps: Optional[int] = None,
         seed: Optional[int] = None,
     ) -> bytes:
-        """
-        Gera uma imagem a partir do prompt.
-
-        Args:
-            prompt: Texto descrevendo a imagem
-            width: Largura (usa max_resolution do modelo se None)
-            height: Altura (usa max_resolution do modelo se None)
-            num_inference_steps: Numero de steps (usa default do modelo se None)
-            seed: Seed para reprodutibilidade
-
-        Returns:
-            bytes: Imagem em formato PNG
-        """
-        # Carregar modelo se necessario
+        """Gera uma imagem a partir do prompt."""
         if self.pipe is None:
             self.load_model()
 
         torch = self._get_torch()
 
-        # Defaults baseados no modelo
         max_res = self.config["max_resolution"]
         width = min(width or max_res, max_res)
         height = min(height or max_res, max_res)
         steps = num_inference_steps or self.config["default_steps"]
         guidance = self.config["guidance_scale"]
 
-        # Generator para seed
         generator = None
         if seed is not None:
             generator = torch.Generator(device=self.device).manual_seed(seed)
 
-        # Parametros de geracao
         gen_kwargs = {
             "prompt": prompt,
             "width": width,
@@ -379,11 +229,6 @@ class FluxLocalGenerator:
             "generator": generator,
         }
 
-        # Adicionar max_sequence_length para Flux
-        if "max_sequence_length" in self.config:
-            gen_kwargs["max_sequence_length"] = self.config["max_sequence_length"]
-
-        # Gerar em thread separada para nao bloquear
         def _generate():
             with torch.inference_mode():
                 result = self.pipe(**gen_kwargs)
@@ -391,7 +236,6 @@ class FluxLocalGenerator:
 
         image = await asyncio.to_thread(_generate)
 
-        # Converter para bytes PNG
         buffer = io.BytesIO()
         image.save(buffer, format="PNG", optimize=True)
         buffer.seek(0)
@@ -409,20 +253,7 @@ class FluxLocalGenerator:
         num_inference_steps: Optional[int] = None,
         seed: Optional[int] = None,
     ) -> str:
-        """
-        Gera uma imagem e salva em arquivo.
-
-        Args:
-            prompt: Texto descrevendo a imagem
-            output_path: Caminho para salvar a imagem
-            width: Largura (usa max_resolution do modelo se None)
-            height: Altura (usa max_resolution do modelo se None)
-            num_inference_steps: Numero de steps (usa default do modelo se None)
-            seed: Seed para reprodutibilidade
-
-        Returns:
-            str: Caminho do arquivo salvo
-        """
+        """Gera uma imagem e salva em arquivo."""
         image_bytes = await self.generate(
             prompt=prompt,
             width=width,
@@ -459,26 +290,17 @@ class FluxLocalGenerator:
             logger.info("Modelo descarregado")
 
 
-# Singleton para reuso
+# Singleton
 _generator_instance: Optional[FluxLocalGenerator] = None
 
 
 def get_generator(vram_mode: str = "auto") -> FluxLocalGenerator:
-    """
-    Obtem instancia singleton do gerador.
-
-    Args:
-        vram_mode: "4gb", "6gb", "8gb" ou "auto"
-
-    Returns:
-        FluxLocalGenerator instance
-    """
+    """Obtem instancia singleton do gerador."""
     global _generator_instance
 
     if _generator_instance is None:
         _generator_instance = FluxLocalGenerator(vram_mode=vram_mode)
     elif vram_mode != "auto" and _generator_instance.vram_mode != vram_mode:
-        # Modo diferente solicitado, recriar
         _generator_instance.unload()
         _generator_instance = FluxLocalGenerator(vram_mode=vram_mode)
 
