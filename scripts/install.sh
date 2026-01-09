@@ -145,26 +145,26 @@ mkdir -p storage/temp
 mkdir -p storage/outputs
 mkdir -p storage/cache
 
-# Criar arquivo de configuração de exemplo se não existir
+# Criar arquivo de configuração padrão se não existir
 if [ ! -f "storage/config.json" ]; then
     cat > storage/config.json << 'EOF'
 {
     "api": {
         "elevenlabs": {
-            "api_key": "SUA_API_KEY_ELEVENLABS",
+            "api_key": "",
             "voice_id": "21m00Tcm4TlvDq8ikWAM",
             "model_id": "eleven_multilingual_v2"
         },
         "assemblyai": {
-            "api_key": "SUA_API_KEY_ASSEMBLYAI",
+            "api_key": "",
             "language_code": "pt"
         },
         "gemini": {
-            "api_key": "SUA_API_KEY_GEMINI",
+            "api_key": "",
             "model": "gemini-2.0-flash"
         },
         "wavespeed": {
-            "api_key": "SUA_API_KEY_WAVESPEED",
+            "api_key": "",
             "model": "flux-dev",
             "resolution": "1280x720",
             "image_style": "cinematic, 8k, photorealistic"
@@ -231,7 +231,6 @@ if [ ! -f "storage/config.json" ]; then
 }
 EOF
     echo -e "${YELLOW}Arquivo de configuração criado em storage/config.json${NC}"
-    echo -e "${RED}IMPORTANTE: Edite o arquivo e adicione suas API keys!${NC}"
 fi
 
 # Criar arquivo .env para o frontend se não existir
@@ -252,18 +251,25 @@ echo "==============================================${NC}"
 echo ""
 echo -e "${YELLOW}Próximos passos:${NC}"
 echo ""
-echo "1. Edite o arquivo de configuração com suas API keys:"
-echo "   ${BLUE}nano $PROJECT_DIR/storage/config.json${NC}"
-echo ""
-echo "2. Para iniciar o servidor, execute:"
+echo "1. Inicie os serviços:"
 echo "   ${BLUE}cd $PROJECT_DIR && ./scripts/start.sh${NC}"
+echo ""
+echo "2. Acesse o frontend e configure suas API keys:"
+echo "   ${BLUE}http://localhost:3000${NC}"
+echo "   Vá na aba 'Configurações' para adicionar suas keys"
 echo ""
 echo "3. Ou inicie manualmente:"
 echo "   Backend:  ${BLUE}cd backend && source venv/bin/activate && uvicorn src.main:app --reload${NC}"
 echo "   Frontend: ${BLUE}cd frontend && npm run dev${NC}"
 echo ""
 echo -e "${YELLOW}URLs após iniciar:${NC}"
-echo "   Frontend: http://localhost:3000"
-echo "   Backend:  http://localhost:8000"
-echo "   API Docs: http://localhost:8000/docs"
+echo "   Frontend:      http://localhost:3000"
+echo "   Backend API:   http://localhost:8000"
+echo "   Documentação:  http://localhost:8000/docs"
+echo ""
+echo -e "${YELLOW}APIs necessárias:${NC}"
+echo "   - ElevenLabs (narração): https://elevenlabs.io"
+echo "   - AssemblyAI (transcrição): https://assemblyai.com"
+echo "   - Google Gemini (análise): https://ai.google.dev"
+echo "   - WaveSpeed (imagens): https://wavespeed.ai"
 echo ""
