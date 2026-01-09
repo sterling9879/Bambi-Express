@@ -19,6 +19,11 @@ import type {
   ElementList,
   ElementType,
   HistoryStats,
+  Batch,
+  BatchListItem,
+  BatchAnalysis,
+  BatchCreateItem,
+  BatchDownloadItem,
 } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
@@ -339,6 +344,79 @@ export const historyApi = {
 
   getElementUrl: (elementId: string): string => {
     return `${API_BASE}/api/history/elements/${elementId}/file`;
+  },
+};
+
+// Batch API
+export const batchApi = {
+  analyze: async (
+    name: string,
+    items: BatchCreateItem[],
+    configOverride?: Record<string, unknown>
+  ): Promise<BatchAnalysis> => {
+    const { data } = await api.post('/api/batch/analyze', {
+      name,
+      items: items.map((item) => toSnakeCase(item)),
+      config_override: configOverride ? toSnakeCase(configOverride) : undefined,
+    });
+    return toCamelCase<BatchAnalysis>(data);
+  },
+
+  create: async (
+    name: string,
+    items: BatchCreateItem[],
+    channelId?: string,
+    configOverride?: Record<string, unknown>
+  ): Promise<{ batchId: string; status: string; message: string; totalItems: number }> => {
+    const { data } = await api.post('/api/batch', {
+      name,
+      items: items.map((item) => toSnakeCase(item)),
+      channel_id: channelId,
+      config_override: configOverride ? toSnakeCase(configOverride) : undefined,
+    });
+    return toCamelCase(data);
+  },
+
+  list: async (params?: {
+    status?: string;
+    limit?: number;
+  }): Promise<{ batches: BatchListItem[]; total: number }> => {
+    const { data } = await api.get('/api/batch', { params });
+    return toCamelCase<{ batches: BatchListItem[]; total: number }>(data);
+  },
+
+  getStatus: async (batchId: string): Promise<Batch> => {
+    const { data } = await api.get(`/api/batch/${batchId}`);
+    return toCamelCase<Batch>(data);
+  },
+
+  pause: async (batchId: string): Promise<void> => {
+    await api.post(`/api/batch/${batchId}/pause`);
+  },
+
+  resume: async (batchId: string): Promise<void> => {
+    await api.post(`/api/batch/${batchId}/resume`);
+  },
+
+  cancel: async (batchId: string): Promise<void> => {
+    await api.post(`/api/batch/${batchId}/cancel`);
+  },
+
+  delete: async (batchId: string): Promise<void> => {
+    await api.delete(`/api/batch/${batchId}`);
+  },
+
+  getItemDownloadUrl: (batchId: string, itemIndex: number): string => {
+    return `${API_BASE}/api/batch/${batchId}/items/${itemIndex}/download`;
+  },
+
+  listDownloads: async (batchId: string): Promise<{
+    batchId: string;
+    totalAvailable: number;
+    downloads: BatchDownloadItem[];
+  }> => {
+    const { data } = await api.get(`/api/batch/${batchId}/download-all`);
+    return toCamelCase(data);
   },
 };
 

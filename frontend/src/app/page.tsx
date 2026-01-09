@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Settings, Music, Video, FileText, History, Cpu } from 'lucide-react';
+import { Settings, Music, Video, FileText, History, Cpu, Layers } from 'lucide-react';
 import { ApiConfig } from '@/components/ConfigPanel/ApiConfig';
 import { MusicConfig } from '@/components/ConfigPanel/MusicConfig';
 import { FFmpegConfig } from '@/components/ConfigPanel/FFmpegConfig';
@@ -11,10 +11,11 @@ import { MusicList } from '@/components/MusicLibrary/MusicList';
 import { TextEditor } from '@/components/Editor/TextEditor';
 import { ProgressTracker } from '@/components/JobStatus/ProgressTracker';
 import { HistoryPanel } from '@/components/History';
+import { BatchPanel } from '@/components/Batch';
 import { useVideoGeneration } from '@/hooks/useVideoGeneration';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
-type Tab = 'editor' | 'config' | 'music' | 'history';
+type Tab = 'editor' | 'batch' | 'config' | 'music' | 'history';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('editor');
@@ -41,6 +42,7 @@ export default function Home() {
 
   const tabs = [
     { id: 'editor' as Tab, label: 'Editor', icon: FileText },
+    { id: 'batch' as Tab, label: 'Batch', icon: Layers },
     { id: 'history' as Tab, label: 'Histórico', icon: History },
     { id: 'config' as Tab, label: 'Configurações', icon: Settings },
     { id: 'music' as Tab, label: 'Músicas', icon: Music },
@@ -163,6 +165,13 @@ export default function Home() {
               )}
             </div>
           </div>
+        )}
+
+        {/* Batch Tab */}
+        {activeTab === 'batch' && (
+          <ErrorBoundary>
+            <BatchPanel />
+          </ErrorBoundary>
         )}
 
         {/* Config Tab */}

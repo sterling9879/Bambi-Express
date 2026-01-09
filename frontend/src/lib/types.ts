@@ -334,3 +334,92 @@ export interface HistoryStats {
   videosByChannel: Record<string, number>;
   recentVideos: VideoHistory[];
 }
+
+// Batch Types
+export type BatchStatus =
+  | 'pending'
+  | 'processing'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export type BatchItemStatus =
+  | 'pending'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'skipped';
+
+export interface BatchItem {
+  id: string;
+  title: string;
+  status: BatchItemStatus;
+  jobId?: string;
+  progress: number;
+  currentStep: string;
+  videoPath?: string;
+  error?: string;
+  startedAt?: string;
+  completedAt?: string;
+  durationSeconds?: number;
+}
+
+export interface Batch {
+  batchId: string;
+  name: string;
+  status: BatchStatus;
+  totalItems: number;
+  completedItems: number;
+  failedItems: number;
+  currentItemIndex: number;
+  currentItemTitle?: string;
+  currentItemStep?: string;
+  progress: number;
+  items: BatchItem[];
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+}
+
+export interface BatchListItem {
+  batchId: string;
+  name: string;
+  status: BatchStatus;
+  totalItems: number;
+  completedItems: number;
+  failedItems: number;
+  progress: number;
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface BatchAnalysis {
+  totalItems: number;
+  totalCharacters: number;
+  totalWords: number;
+  estimatedTotalDurationSeconds: number;
+  estimatedProcessingTimeMinutes: number;
+  itemsAnalysis: Array<{
+    index: number;
+    title: string;
+    charCount?: number;
+    wordCount?: number;
+    estimatedDurationSeconds?: number;
+    estimatedChunks?: number;
+    error?: string;
+  }>;
+}
+
+export interface BatchCreateItem {
+  title: string;
+  text: string;
+}
+
+export interface BatchDownloadItem {
+  index: number;
+  title: string;
+  downloadUrl: string;
+  fileSize: number;
+}
