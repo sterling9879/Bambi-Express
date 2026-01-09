@@ -13,7 +13,7 @@ from .audio_generator import ElevenLabsGenerator
 from .audio_merger import AudioMerger
 from .transcriber import AssemblyAITranscriber
 from .scene_analyzer import SceneAnalyzer
-from .image_generator import WaveSpeedGenerator
+from .image_generator import WaveSpeedGenerator, get_image_generator
 from .music_manager import MusicManager
 from .ai_music_generator import AIMusicGenerator
 from .audio_mixer import AudioMixer
@@ -249,19 +249,22 @@ class JobOrchestrator:
                         )]
 
             # 7. Gerar imagens
-            self._add_log(f"Iniciando geração de {len(scene_analysis.scenes)} imagens com WaveSpeed...")
+            # Usar factory function para escolher entre GPU local ou WaveSpeed
+            image_generator = get_image_generator(
+                config=self.config,
+                output_dir=str(job_temp_dir),
+                log_callback=self._add_log
+            )
+
+            # Determinar qual provider está sendo usado
+            is_local = self.config.gpu and self.config.gpu.enabled and self.config.gpu.provider.value == "local"
+            provider_name = "GPU Local" if is_local else "WaveSpeed"
+
+            self._add_log(f"Iniciando geração de {len(scene_analysis.scenes)} imagens com {provider_name}...")
             await self._update_status(
                 job_id, JobStatusEnum.GENERATING_IMAGES, 0.50,
                 "Gerando imagens", started_at,
-                {"scenes_total": len(scene_analysis.scenes)}
-            )
-
-            image_generator = WaveSpeedGenerator(
-                api_key=self.config.api.wavespeed.api_key,
-                model=self.config.api.wavespeed.model,
-                resolution=self.config.api.wavespeed.resolution,
-                output_dir=str(job_temp_dir),
-                log_callback=self._add_log
+                {"scenes_total": len(scene_analysis.scenes), "provider": provider_name}
             )
 
             # Progress callback para imagens - o mais crítico (121+ chamadas)
