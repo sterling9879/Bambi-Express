@@ -13,7 +13,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Constantes dos modelos - Otimizado para 16:9 (1280x720)
+# Constantes dos modelos - Otimizado para velocidade maxima
 MODELS_CONFIG = {
     "4gb": {
         "name": "SDXL Turbo",
@@ -23,8 +23,8 @@ MODELS_CONFIG = {
         "variant": "fp16",
         "default_steps": 1,
         "guidance_scale": 0.0,
-        "width": 896,
-        "height": 512,
+        "width": 768,
+        "height": 432,
         "quantized": False,
     },
     "6gb": {
@@ -45,7 +45,7 @@ MODELS_CONFIG = {
         "pipeline_class": "AutoPipelineForText2Image",
         "torch_dtype": "float16",
         "variant": "fp16",
-        "default_steps": 2,
+        "default_steps": 1,
         "guidance_scale": 0.0,
         "width": 1280,
         "height": 720,
@@ -169,7 +169,7 @@ class FluxLocalGenerator:
             return torch.float16
 
     def load_model(self) -> None:
-        """Carrega o modelo SDXL Turbo."""
+        """Carrega o modelo SDXL Turbo com otimizacoes de velocidade."""
         if self.pipe is not None and self.current_mode == self.vram_mode:
             logger.info("Modelo ja carregado")
             return
@@ -192,8 +192,21 @@ class FluxLocalGenerator:
         )
         self.pipe.to(self.device)
 
-        if hasattr(self.pipe, 'enable_attention_slicing'):
-            self.pipe.enable_attention_slicing()
+        # Otimizacoes de velocidade
+        self.pipe.set_progress_bar_config(disable=True)
+
+        # Usar xformers se disponivel (muito mais rapido)
+        try:
+            self.pipe.enable_xformers_memory_efficient_attention()
+            logger.info("xformers ativado!")
+        except Exception:
+            # Fallback para sliced attention
+            if hasattr(self.pipe, 'enable_attention_slicing'):
+                self.pipe.enable_attention_slicing(1)
+
+        # VAE em modo tiled para economia de memoria
+        if hasattr(self.pipe, 'enable_vae_tiling'):
+            self.pipe.enable_vae_tiling()
 
         self.current_mode = self.vram_mode
         flush_memory()
