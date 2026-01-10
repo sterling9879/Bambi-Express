@@ -232,9 +232,11 @@ export interface VideoEffect {
 
 // Subtitle Config
 export type SubtitlePosition = 'bottom' | 'top' | 'middle';
+export type SubtitleLanguage = 'pt' | 'en' | 'es' | 'auto';
 
 export interface SubtitleConfig {
   enabled: boolean;
+  language: SubtitleLanguage;
   position: SubtitlePosition;
   fontSize: number;
   fontColor: string;
