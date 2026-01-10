@@ -85,6 +85,15 @@ class SunoConfig(ApiConfigItem):
     pass
 
 
+class CustomVoice(BaseModel):
+    """Voz personalizada para Minimax."""
+    id: str  # ID único interno
+    voice_id: str  # ID da voz na API (ex: "Narrator_Man")
+    name: str  # Nome de exibição
+    gender: str = "neutral"  # male, female, neutral
+    description: str = ""
+
+
 class MinimaxConfig(BaseModel):
     """Configuração para Minimax Audio (via WaveSpeed)."""
     voice_id: str = "Narrator_Man"
@@ -92,6 +101,7 @@ class MinimaxConfig(BaseModel):
     speed: float = 1.0  # 0.5 - 2.0
     pitch: int = 0  # -12 to 12
     volume: float = 1.0  # 0.0 - 1.0
+    custom_voices: List[CustomVoice] = []
 
 
 class ApiConfig(BaseModel):

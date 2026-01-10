@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { configApi } from '@/lib/api';
 import { useConfigStore } from '@/stores/configStore';
-import type { FullConfig, ApiTestResult, CreditsResponse, Voice, MinimaxVoice } from '@/lib/types';
+import type { FullConfig, ApiTestResult, CreditsResponse, Voice, MinimaxVoice, CustomVoice } from '@/lib/types';
 
 export function useApiConfig() {
   const queryClient = useQueryClient();
@@ -103,12 +103,33 @@ export function useApiConfig() {
     staleTime: 24 * 60 * 60 * 1000, // 24 hours - static data
   });
 
+  // Get custom voices
+  const {
+    data: customVoicesData,
+  } = useQuery({
+    queryKey: ['customVoices'],
+    queryFn: configApi.getCustomVoices,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
   const saveConfig = useCallback(
     async (newConfig: FullConfig) => {
       await saveMutation.mutateAsync(newConfig);
     },
     [saveMutation]
   );
+
+  // Combine default and custom voices for Minimax
+  const allMinimaxVoices = [
+    ...(customVoicesData?.customVoices || []).map((v: CustomVoice) => ({
+      voice_id: v.voiceId,
+      name: `${v.name} (personalizada)`,
+      gender: v.gender,
+      language: 'custom',
+      isCustom: true,
+    })),
+    ...(minimaxVoices || []),
+  ];
 
   return {
     config: config || fetchedConfig,
@@ -123,7 +144,8 @@ export function useApiConfig() {
     refetchCredits,
     voices: voices || [],
     refetchVoices,
-    minimaxVoices: minimaxVoices || [],
+    minimaxVoices: allMinimaxVoices,
     minimaxEmotions: minimaxEmotions || [],
+    customVoices: customVoicesData?.customVoices || [],
   };
 }

@@ -35,6 +35,7 @@ export interface ApiConfig {
     speed: number;
     pitch: number;
     volume: number;
+    customVoices: CustomVoice[];
   };
   audioProvider: AudioProvider;
 }
@@ -285,6 +286,21 @@ export interface MinimaxVoice {
   name: string;
   gender: 'male' | 'female' | 'neutral';
   language: string;
+}
+
+export interface CustomVoice {
+  id: string;
+  voiceId: string;
+  name: string;
+  gender: 'male' | 'female' | 'neutral';
+  description: string;
+}
+
+export interface CustomVoiceCreate {
+  voiceId: string;
+  name: string;
+  gender?: 'male' | 'female' | 'neutral';
+  description?: string;
 }
 
 // History Types

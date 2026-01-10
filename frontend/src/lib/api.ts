@@ -12,6 +12,8 @@ import type {
   CreditsResponse,
   Voice,
   MinimaxVoice,
+  CustomVoice,
+  CustomVoiceCreate,
   Channel,
   ChannelCreate,
   VideoHistory,
@@ -152,6 +154,28 @@ export const configApi = {
   getMinimaxEmotions: async (): Promise<string[]> => {
     const { data } = await api.get('/api/config/minimax-emotions');
     return data.emotions as string[];
+  },
+
+  getCustomVoices: async (): Promise<{
+    customVoices: CustomVoice[];
+    defaultVoices: MinimaxVoice[];
+  }> => {
+    const { data } = await api.get('/api/config/custom-voices');
+    return toCamelCase(data);
+  },
+
+  createCustomVoice: async (voice: CustomVoiceCreate): Promise<CustomVoice> => {
+    const { data } = await api.post('/api/config/custom-voices', toSnakeCase(voice));
+    return toCamelCase<CustomVoice>(data);
+  },
+
+  updateCustomVoice: async (voiceId: string, updates: Partial<CustomVoiceCreate>): Promise<CustomVoice> => {
+    const { data } = await api.put(`/api/config/custom-voices/${voiceId}`, toSnakeCase(updates));
+    return toCamelCase<CustomVoice>(data);
+  },
+
+  deleteCustomVoice: async (voiceId: string): Promise<void> => {
+    await api.delete(`/api/config/custom-voices/${voiceId}`);
   },
 };
 

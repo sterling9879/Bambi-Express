@@ -37,6 +37,7 @@ export function ApiConfig() {
           speed: 1.0,
           pitch: 0,
           volume: 1.0,
+          customVoices: [],
         },
         audioProvider: config.api.audioProvider || 'elevenlabs',
       };
