@@ -16,8 +16,10 @@ import {
   Loader2,
   Upload,
   List,
+  Folder,
 } from 'lucide-react';
-import { batchApi } from '@/lib/api';
+import { useQuery } from '@tanstack/react-query';
+import { batchApi, channelsApi } from '@/lib/api';
 import type {
   Batch,
   BatchListItem,
@@ -41,6 +43,7 @@ export function BatchPanel() {
     { id: '1', title: '', text: '' },
   ]);
   const [batchName, setBatchName] = useState('');
+  const [selectedChannel, setSelectedChannel] = useState<string>('');
   const [analysis, setAnalysis] = useState<BatchAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -53,6 +56,12 @@ export function BatchPanel() {
   // Details view state
   const [currentBatch, setCurrentBatch] = useState<Batch | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+
+  // Fetch channels
+  const { data: channels = [] } = useQuery({
+    queryKey: ['channels'],
+    queryFn: channelsApi.list,
+  });
 
   // Load batches list
   const loadBatches = useCallback(async () => {
@@ -169,7 +178,7 @@ export function BatchPanel() {
       }));
 
       const name = batchName.trim() || `Batch ${new Date().toLocaleDateString()}`;
-      const result = await batchApi.create(name, items);
+      const result = await batchApi.create(name, items, selectedChannel || undefined);
 
       // Switch to details view
       setViewMode('details');
@@ -178,6 +187,7 @@ export function BatchPanel() {
       // Reset form
       setScripts([{ id: '1', title: '', text: '' }]);
       setBatchName('');
+      setSelectedChannel('');
       setAnalysis(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao criar batch');
@@ -304,18 +314,45 @@ export function BatchPanel() {
       {/* Create View */}
       {viewMode === 'create' && (
         <div className="space-y-6">
-          {/* Batch Name */}
+          {/* Batch Name and Channel */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Nome do Batch
-            </label>
-            <input
-              type="text"
-              value={batchName}
-              onChange={(e) => setBatchName(e.target.value)}
-              placeholder="Ex: Vídeos de Janeiro"
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Nome do Batch
+                </label>
+                <input
+                  type="text"
+                  value={batchName}
+                  onChange={(e) => setBatchName(e.target.value)}
+                  placeholder="Ex: Vídeos de Janeiro"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <div className="flex items-center space-x-1">
+                    <Folder className="w-4 h-4" />
+                    <span>Canal</span>
+                  </div>
+                </label>
+                <select
+                  value={selectedChannel}
+                  onChange={(e) => setSelectedChannel(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="">Sem canal (padrão)</option>
+                  {channels.map((channel) => (
+                    <option key={channel.id} value={channel.id}>
+                      {channel.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Organiza os vídeos gerados por canal
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Scripts */}

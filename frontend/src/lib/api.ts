@@ -11,6 +11,9 @@ import type {
   ApiTestResult,
   CreditsResponse,
   Voice,
+  MinimaxVoice,
+  CustomVoice,
+  CustomVoiceCreate,
   Channel,
   ChannelCreate,
   VideoHistory,
@@ -24,6 +27,7 @@ import type {
   BatchAnalysis,
   BatchCreateItem,
   BatchDownloadItem,
+  VideoEffect,
 } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
@@ -141,6 +145,38 @@ export const configApi = {
   getVoices: async (): Promise<Voice[]> => {
     const { data } = await api.get('/api/config/voices');
     return toCamelCase<Voice[]>(data.voices);
+  },
+
+  getMinimaxVoices: async (): Promise<MinimaxVoice[]> => {
+    const { data } = await api.get('/api/config/minimax-voices');
+    return data.voices as MinimaxVoice[];
+  },
+
+  getMinimaxEmotions: async (): Promise<string[]> => {
+    const { data } = await api.get('/api/config/minimax-emotions');
+    return data.emotions as string[];
+  },
+
+  getCustomVoices: async (): Promise<{
+    customVoices: CustomVoice[];
+    defaultVoices: MinimaxVoice[];
+  }> => {
+    const { data } = await api.get('/api/config/custom-voices');
+    return toCamelCase(data);
+  },
+
+  createCustomVoice: async (voice: CustomVoiceCreate): Promise<CustomVoice> => {
+    const { data } = await api.post('/api/config/custom-voices', toSnakeCase(voice));
+    return toCamelCase<CustomVoice>(data);
+  },
+
+  updateCustomVoice: async (voiceId: string, updates: Partial<CustomVoiceCreate>): Promise<CustomVoice> => {
+    const { data } = await api.put(`/api/config/custom-voices/${voiceId}`, toSnakeCase(updates));
+    return toCamelCase<CustomVoice>(data);
+  },
+
+  deleteCustomVoice: async (voiceId: string): Promise<void> => {
+    await api.delete(`/api/config/custom-voices/${voiceId}`);
   },
 };
 
@@ -417,6 +453,62 @@ export const batchApi = {
   }> => {
     const { data } = await api.get(`/api/batch/${batchId}/download-all`);
     return toCamelCase(data);
+  },
+};
+
+// Effects API
+export const effectsApi = {
+  list: async (category?: string): Promise<VideoEffect[]> => {
+    const { data } = await api.get('/api/effects', { params: { category } });
+    return toCamelCase<VideoEffect[]>(data);
+  },
+
+  getCategories: async (): Promise<string[]> => {
+    const { data } = await api.get('/api/effects/categories');
+    return data;
+  },
+
+  get: async (effectId: string): Promise<VideoEffect> => {
+    const { data } = await api.get(`/api/effects/${effectId}`);
+    return toCamelCase<VideoEffect>(data);
+  },
+
+  upload: async (
+    file: File,
+    name: string,
+    description?: string,
+    category?: string
+  ): Promise<VideoEffect> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('name', name);
+    if (description) formData.append('description', description);
+    if (category) formData.append('category', category);
+
+    const { data } = await api.post('/api/effects', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return toCamelCase<VideoEffect>(data);
+  },
+
+  update: async (
+    effectId: string,
+    updates: { name?: string; description?: string; category?: string }
+  ): Promise<VideoEffect> => {
+    const { data } = await api.put(`/api/effects/${effectId}`, toSnakeCase(updates));
+    return toCamelCase<VideoEffect>(data);
+  },
+
+  delete: async (effectId: string): Promise<void> => {
+    await api.delete(`/api/effects/${effectId}`);
+  },
+
+  getThumbnailUrl: (effectId: string): string => {
+    return `${API_BASE}/api/effects/${effectId}/thumbnail`;
+  },
+
+  getPreviewUrl: (effectId: string): string => {
+    return `${API_BASE}/api/effects/${effectId}/preview`;
   },
 };
 

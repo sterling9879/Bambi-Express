@@ -17,10 +17,12 @@ from ..models.config import (
     GeminiConfig,
     WaveSpeedConfig,
     SunoConfig,
+    MinimaxConfig,
+    CustomVoice,
     FFmpegConfig,
     MusicConfig,
 )
-from ..services.audio_generator import ElevenLabsGenerator
+from ..services.audio_generator import ElevenLabsGenerator, MinimaxAudioGenerator
 from ..services.transcriber import AssemblyAITranscriber
 from ..services.scene_analyzer import SceneAnalyzer
 from ..services.image_generator import WaveSpeedGenerator
@@ -101,7 +103,7 @@ async def update_ffmpeg_config(ffmpeg_config: FFmpegConfig):
 
 
 class TestApiRequest(BaseModel):
-    api: Literal["elevenlabs", "assemblyai", "gemini", "wavespeed", "suno"]
+    api: Literal["elevenlabs", "assemblyai", "gemini", "wavespeed", "suno", "minimax"]
 
 
 class TestApiResponse(BaseModel):
@@ -190,6 +192,22 @@ async def test_api_connection(request: TestApiRequest):
                 details=result
             )
 
+        elif request.api == "minimax":
+            # Minimax usa a API key do WaveSpeed
+            if not config.api.wavespeed.api_key:
+                return TestApiResponse(connected=False, error="WaveSpeed API key não configurada (necessária para Minimax)")
+
+            generator = MinimaxAudioGenerator(
+                api_key=config.api.wavespeed.api_key,
+                voice_id=config.api.minimax.voice_id if config.api.minimax else "Narrator_Man"
+            )
+            result = await generator.test_connection()
+            return TestApiResponse(
+                connected=result.get("connected", False),
+                error=result.get("error"),
+                details=result
+            )
+
         else:
             return TestApiResponse(connected=False, error=f"API desconhecida: {request.api}")
 
@@ -258,6 +276,133 @@ async def get_available_voices():
         return VoicesResponse(voices=voices)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/minimax-voices", response_model=VoicesResponse)
+async def get_minimax_voices():
+    """
+    Lista vozes disponíveis no Minimax.
+    """
+    # Minimax tem vozes predefinidas, não precisa de API key
+    voices = MinimaxAudioGenerator.AVAILABLE_VOICES
+    return VoicesResponse(voices=voices)
+
+
+@router.get("/minimax-emotions")
+async def get_minimax_emotions():
+    """
+    Lista emoções disponíveis no Minimax.
+    """
+    return {"emotions": MinimaxAudioGenerator.AVAILABLE_EMOTIONS}
+
+
+# ============== CUSTOM VOICES MANAGEMENT ==============
+
+
+class CustomVoiceCreate(BaseModel):
+    voice_id: str
+    name: str
+    gender: str = "neutral"
+    description: str = ""
+
+
+class CustomVoiceUpdate(BaseModel):
+    voice_id: Optional[str] = None
+    name: Optional[str] = None
+    gender: Optional[str] = None
+    description: Optional[str] = None
+
+
+@router.get("/custom-voices")
+async def get_custom_voices():
+    """
+    Lista todas as vozes personalizadas do Minimax.
+    """
+    config = get_config()
+    custom_voices = config.api.minimax.custom_voices if config.api.minimax else []
+    # Também inclui as vozes padrão
+    default_voices = MinimaxAudioGenerator.AVAILABLE_VOICES
+    return {
+        "custom_voices": [v.model_dump() for v in custom_voices],
+        "default_voices": default_voices
+    }
+
+
+@router.post("/custom-voices")
+async def create_custom_voice(voice: CustomVoiceCreate):
+    """
+    Adiciona uma nova voz personalizada.
+    """
+    import uuid
+    config = get_config()
+
+    # Criar nova voz com ID único
+    new_voice = CustomVoice(
+        id=str(uuid.uuid4())[:8],
+        voice_id=voice.voice_id,
+        name=voice.name,
+        gender=voice.gender,
+        description=voice.description
+    )
+
+    # Adicionar à lista
+    if not config.api.minimax:
+        config.api.minimax = MinimaxConfig()
+    config.api.minimax.custom_voices.append(new_voice)
+
+    save_config(config)
+    return new_voice.model_dump()
+
+
+@router.put("/custom-voices/{voice_id}")
+async def update_custom_voice(voice_id: str, update: CustomVoiceUpdate):
+    """
+    Atualiza uma voz personalizada existente.
+    """
+    config = get_config()
+
+    if not config.api.minimax:
+        raise HTTPException(status_code=404, detail="Voz não encontrada")
+
+    # Encontrar e atualizar a voz
+    for voice in config.api.minimax.custom_voices:
+        if voice.id == voice_id:
+            if update.voice_id is not None:
+                voice.voice_id = update.voice_id
+            if update.name is not None:
+                voice.name = update.name
+            if update.gender is not None:
+                voice.gender = update.gender
+            if update.description is not None:
+                voice.description = update.description
+
+            save_config(config)
+            return voice.model_dump()
+
+    raise HTTPException(status_code=404, detail="Voz não encontrada")
+
+
+@router.delete("/custom-voices/{voice_id}")
+async def delete_custom_voice(voice_id: str):
+    """
+    Remove uma voz personalizada.
+    """
+    config = get_config()
+
+    if not config.api.minimax:
+        raise HTTPException(status_code=404, detail="Voz não encontrada")
+
+    # Encontrar e remover a voz
+    original_len = len(config.api.minimax.custom_voices)
+    config.api.minimax.custom_voices = [
+        v for v in config.api.minimax.custom_voices if v.id != voice_id
+    ]
+
+    if len(config.api.minimax.custom_voices) == original_len:
+        raise HTTPException(status_code=404, detail="Voz não encontrada")
+
+    save_config(config)
+    return {"deleted": True, "voice_id": voice_id}
 
 
 # ============== GPU / LOCAL IMAGE GENERATION ==============

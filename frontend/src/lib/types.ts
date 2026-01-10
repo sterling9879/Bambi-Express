@@ -1,3 +1,9 @@
+// Audio Provider Type
+export type AudioProvider = 'elevenlabs' | 'minimax';
+
+// Minimax Emotion Type
+export type MinimaxEmotion = 'neutral' | 'happy' | 'sad' | 'angry' | 'fearful' | 'disgusted' | 'surprised';
+
 // API Configuration Types
 export interface ApiConfig {
   elevenlabs: {
@@ -18,11 +24,21 @@ export interface ApiConfig {
     model: 'flux-dev-ultra-fast' | 'flux-schnell' | 'flux-dev';
     resolution: '1920x1080' | '1280x720' | '1080x1920';
     imageStyle?: string;
+    outputFormat?: 'png' | 'jpeg';
   };
   suno?: {
     apiKey: string;
     enabled: boolean;
   };
+  minimax: {
+    voiceId: string;
+    emotion: MinimaxEmotion;
+    speed: number;
+    pitch: number;
+    volume: number;
+    customVoices: CustomVoice[];
+  };
+  audioProvider: AudioProvider;
 }
 
 // Music Types
@@ -191,12 +207,50 @@ export interface ModelInfo {
   quantized: boolean;
 }
 
+// Effects Config
+export type BlendMode = 'lighten' | 'screen' | 'add';
+
+export interface EffectsConfig {
+  enabled: boolean;
+  effectId?: string;
+  blendMode: BlendMode;
+  opacity: number;
+}
+
+export interface VideoEffect {
+  id: string;
+  name: string;
+  filename: string;
+  durationMs: number;
+  description: string;
+  category: string;
+  thumbnailUrl?: string;
+  createdAt: string;
+  fileSize: number;
+}
+
+// Subtitle Config
+export type SubtitlePosition = 'bottom' | 'top' | 'middle';
+
+export interface SubtitleConfig {
+  enabled: boolean;
+  position: SubtitlePosition;
+  fontSize: number;
+  fontColor: string;
+  outlineColor: string;
+  outlineWidth: number;
+  backgroundOpacity: number;
+  marginVertical: number;
+}
+
 // Full Config
 export interface FullConfig {
   api: ApiConfig;
   music: MusicConfig;
   ffmpeg: FFmpegConfig;
   gpu: GPUConfig;
+  effects: EffectsConfig;
+  subtitles: SubtitleConfig;
 }
 
 // Job Types
@@ -264,6 +318,28 @@ export interface Voice {
   name: string;
   category?: string;
   labels?: Record<string, string>;
+}
+
+export interface MinimaxVoice {
+  voice_id: string;
+  name: string;
+  gender: 'male' | 'female' | 'neutral';
+  language: string;
+}
+
+export interface CustomVoice {
+  id: string;
+  voiceId: string;
+  name: string;
+  gender: 'male' | 'female' | 'neutral';
+  description: string;
+}
+
+export interface CustomVoiceCreate {
+  voiceId: string;
+  name: string;
+  gender?: 'male' | 'female' | 'neutral';
+  description?: string;
 }
 
 // History Types

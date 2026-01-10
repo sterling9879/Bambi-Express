@@ -18,6 +18,8 @@ export function ApiConfig() {
     credits,
     refetchCredits,
     voices,
+    minimaxVoices,
+    minimaxEmotions,
   } = useApiConfig();
 
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
@@ -26,7 +28,20 @@ export function ApiConfig() {
   // Update local config when config changes
   useEffect(() => {
     if (config?.api && !localConfig) {
-      setLocalConfig(config.api);
+      // Ensure minimax and audioProvider have default values
+      const apiConfig = {
+        ...config.api,
+        minimax: config.api.minimax || {
+          voiceId: 'Narrator_Man',
+          emotion: 'neutral',
+          speed: 1.0,
+          pitch: 0,
+          volume: 1.0,
+          customVoices: [],
+        },
+        audioProvider: config.api.audioProvider || 'elevenlabs',
+      };
+      setLocalConfig(apiConfig);
     }
   }, [config?.api, localConfig]);
 
@@ -74,10 +89,25 @@ export function ApiConfig() {
   };
 
   const handleTestAll = async () => {
-    const apis = ['elevenlabs', 'assemblyai', 'gemini', 'wavespeed'];
+    const apis = ['elevenlabs', 'assemblyai', 'gemini', 'wavespeed', 'minimax'];
     for (const api of apis) {
       await handleTestApi(api);
     }
+  };
+
+  const updateNumberField = (path: string, value: number) => {
+    if (!localConfig) return;
+
+    const keys = path.split('.');
+    const newConfig = JSON.parse(JSON.stringify(localConfig));
+    let obj: Record<string, unknown> = newConfig;
+
+    for (let i = 0; i < keys.length - 1; i++) {
+      obj = obj[keys[i]] as Record<string, unknown>;
+    }
+    obj[keys[keys.length - 1]] = value;
+
+    setLocalConfig(newConfig);
   };
 
   if (isLoading || !localConfig) {
@@ -179,6 +209,41 @@ export function ApiConfig() {
       </div>
 
       <div className="p-6 space-y-6">
+        {/* Audio Provider Selection */}
+        <div className="border-b border-gray-200 dark:border-gray-700 pb-6">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+            Provedor de Áudio
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            <button
+              onClick={() => updateField('audioProvider', 'elevenlabs')}
+              className={`p-4 rounded-lg border-2 transition-colors ${
+                localConfig.audioProvider === 'elevenlabs'
+                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                  : 'border-gray-300 dark:border-gray-600 hover:border-gray-400'
+              }`}
+            >
+              <div className="font-medium text-gray-900 dark:text-white">ElevenLabs</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                Vozes de alta qualidade, suporte multilíngue
+              </div>
+            </button>
+            <button
+              onClick={() => updateField('audioProvider', 'minimax')}
+              className={`p-4 rounded-lg border-2 transition-colors ${
+                localConfig.audioProvider === 'minimax'
+                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                  : 'border-gray-300 dark:border-gray-600 hover:border-gray-400'
+              }`}
+            >
+              <div className="font-medium text-gray-900 dark:text-white">Minimax</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                Via WaveSpeed, com controle de emoção
+              </div>
+            </button>
+          </div>
+        </div>
+
         {/* ElevenLabs */}
         <ApiSection
           title="ElevenLabs"
@@ -221,6 +286,108 @@ export function ApiConfig() {
               className="text-sm text-primary-600 hover:text-primary-700 disabled:opacity-50"
             >
               {testingApi === 'elevenlabs' ? 'Testando...' : 'Testar conexão'}
+            </button>
+          </div>
+        </ApiSection>
+
+        {/* Minimax */}
+        <ApiSection
+          title="Minimax Audio (via WaveSpeed)"
+          apiName="minimax"
+          status={
+            localConfig.audioProvider === 'minimax' && (
+              <span className="text-xs px-2 py-1 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded">
+                Ativo
+              </span>
+            )
+          }
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Utiliza a mesma API Key do WaveSpeed. Configure a chave na seção WaveSpeed abaixo.
+            </p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Voz
+              </label>
+              <select
+                value={localConfig.minimax?.voiceId || 'Narrator_Man'}
+                onChange={(e) => updateField('minimax.voiceId', e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                {minimaxVoices.map((voice) => (
+                  <option key={voice.voice_id} value={voice.voice_id}>
+                    {voice.name} ({voice.gender})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Emoção
+              </label>
+              <select
+                value={localConfig.minimax?.emotion || 'neutral'}
+                onChange={(e) => updateField('minimax.emotion', e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                {minimaxEmotions.map((emotion) => (
+                  <option key={emotion} value={emotion}>
+                    {emotion.charAt(0).toUpperCase() + emotion.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Velocidade ({localConfig.minimax?.speed?.toFixed(1) || '1.0'}x)
+                </label>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2.0"
+                  step="0.1"
+                  value={localConfig.minimax?.speed || 1.0}
+                  onChange={(e) => updateNumberField('minimax.speed', parseFloat(e.target.value))}
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Pitch ({localConfig.minimax?.pitch || 0})
+                </label>
+                <input
+                  type="range"
+                  min="-12"
+                  max="12"
+                  step="1"
+                  value={localConfig.minimax?.pitch || 0}
+                  onChange={(e) => updateNumberField('minimax.pitch', parseInt(e.target.value))}
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Volume ({((localConfig.minimax?.volume || 1.0) * 100).toFixed(0)}%)
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={localConfig.minimax?.volume || 1.0}
+                  onChange={(e) => updateNumberField('minimax.volume', parseFloat(e.target.value))}
+                  className="w-full"
+                />
+              </div>
+            </div>
+            <button
+              onClick={() => handleTestApi('minimax')}
+              disabled={testingApi === 'minimax'}
+              className="text-sm text-primary-600 hover:text-primary-700 disabled:opacity-50"
+            >
+              {testingApi === 'minimax' ? 'Testando...' : 'Testar conexão'}
             </button>
           </div>
         </ApiSection>
@@ -321,23 +488,45 @@ export function ApiConfig() {
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="flux-dev-ultra-fast">Flux Dev Ultra Fast (Recomendado)</option>
-                <option value="flux-schnell">Flux Schnell</option>
-                <option value="flux-dev">Flux Dev</option>
+                <option value="flux-schnell">Flux Schnell (Mais Rápido)</option>
+                <option value="flux-dev">Flux Dev (Maior Qualidade)</option>
               </select>
+              <p className="text-xs text-gray-500 mt-1">
+                {localConfig.wavespeed.model === 'flux-schnell'
+                  ? 'Modelo rápido ideal para prototipagem. Menor custo por imagem.'
+                  : localConfig.wavespeed.model === 'flux-dev'
+                  ? 'Máxima qualidade, processamento mais lento. Ideal para produção final.'
+                  : 'Balanço entre velocidade e qualidade. Recomendado para uso geral.'}
+              </p>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Resolução
-              </label>
-              <select
-                value={localConfig.wavespeed.resolution}
-                onChange={(e) => updateField('wavespeed.resolution', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              >
-                <option value="1920x1080">1920x1080 (Landscape)</option>
-                <option value="1080x1920">1080x1920 (Vertical)</option>
-                <option value="1280x720">1280x720 (HD)</option>
-              </select>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Resolução
+                </label>
+                <select
+                  value={localConfig.wavespeed.resolution}
+                  onChange={(e) => updateField('wavespeed.resolution', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="1920x1080">1920x1080 (Landscape)</option>
+                  <option value="1080x1920">1080x1920 (Vertical)</option>
+                  <option value="1280x720">1280x720 (HD)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Formato de Saída
+                </label>
+                <select
+                  value={localConfig.wavespeed.outputFormat || 'png'}
+                  onChange={(e) => updateField('wavespeed.outputFormat', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="png">PNG (Maior qualidade)</option>
+                  <option value="jpeg">JPEG (Menor tamanho)</option>
+                </select>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

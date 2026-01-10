@@ -43,6 +43,11 @@ class MusicMode(str, Enum):
     AI_GENERATED = "ai_generated"
 
 
+class AudioProvider(str, Enum):
+    ELEVENLABS = "elevenlabs"
+    MINIMAX = "minimax"
+
+
 class SceneDurationMode(str, Enum):
     AUTO = "auto"
     FIXED = "fixed"
@@ -71,13 +76,33 @@ class GeminiConfig(ApiConfigItem):
 
 
 class WaveSpeedConfig(ApiConfigItem):
-    model: str = "flux-dev-ultra-fast"
+    model: str = "flux-dev-ultra-fast"  # flux-dev-ultra-fast, flux-schnell, flux-dev
     resolution: str = "1920x1080"
     image_style: str = "cinematic, dramatic lighting, 8k, hyperrealistic, professional photography"
+    output_format: str = "png"  # png ou jpeg
 
 
 class SunoConfig(ApiConfigItem):
     pass
+
+
+class CustomVoice(BaseModel):
+    """Voz personalizada para Minimax."""
+    id: str  # ID único interno
+    voice_id: str  # ID da voz na API (ex: "Narrator_Man")
+    name: str  # Nome de exibição
+    gender: str = "neutral"  # male, female, neutral
+    description: str = ""
+
+
+class MinimaxConfig(BaseModel):
+    """Configuração para Minimax Audio (via WaveSpeed)."""
+    voice_id: str = "Narrator_Man"
+    emotion: str = "neutral"  # neutral, happy, sad, angry, fearful, disgusted, surprised
+    speed: float = 1.0  # 0.5 - 2.0
+    pitch: int = 0  # -12 to 12
+    volume: float = 1.0  # 0.0 - 1.0
+    custom_voices: List[CustomVoice] = []
 
 
 class ApiConfig(BaseModel):
@@ -86,6 +111,8 @@ class ApiConfig(BaseModel):
     gemini: GeminiConfig = GeminiConfig()
     wavespeed: WaveSpeedConfig = WaveSpeedConfig()
     suno: Optional[SunoConfig] = None
+    minimax: MinimaxConfig = MinimaxConfig()
+    audio_provider: AudioProvider = AudioProvider.ELEVENLABS
 
 
 # ============== FFMPEG CONFIGS ==============
@@ -185,6 +212,13 @@ class ImageProvider(str, Enum):
     LOCAL = "local"
 
 
+class WaveSpeedModel(str, Enum):
+    """Modelos disponíveis no WaveSpeed para geração de imagens."""
+    FLUX_DEV_ULTRA_FAST = "flux-dev-ultra-fast"  # Alta qualidade, mais lento
+    FLUX_SCHNELL = "flux-schnell"  # Rápido, menor qualidade
+    FLUX_DEV = "flux-dev"  # Balanço entre qualidade e velocidade
+
+
 class VramMode(str, Enum):
     AUTO = "auto"
     VRAM_4GB = "4gb"
@@ -200,6 +234,39 @@ class GPUConfig(BaseModel):
     auto_fallback_to_api: bool = True  # Se local falhar, usa WaveSpeed
 
 
+# ============== VIDEO EFFECTS ==============
+
+
+class EffectsConfig(BaseModel):
+    """Configuração para efeitos de overlay em vídeos."""
+    enabled: bool = False
+    effect_id: Optional[str] = None  # ID do efeito selecionado
+    blend_mode: str = "lighten"  # lighten, screen, add
+    opacity: float = 1.0  # 0.0 a 1.0
+
+
+# ============== SUBTITLES ==============
+
+
+class SubtitlePosition(str, Enum):
+    """Posição das legendas no vídeo."""
+    BOTTOM = "bottom"  # Estilo filme tradicional
+    TOP = "top"
+    MIDDLE = "middle"
+
+
+class SubtitleConfig(BaseModel):
+    """Configuração para legendas estilo filme."""
+    enabled: bool = False
+    position: SubtitlePosition = SubtitlePosition.BOTTOM
+    font_size: int = 48  # Tamanho da fonte
+    font_color: str = "white"  # Cor do texto
+    outline_color: str = "black"  # Cor do contorno
+    outline_width: int = 3  # Espessura do contorno
+    background_opacity: float = 0.0  # Opacidade do fundo (0 = sem fundo)
+    margin_vertical: int = 50  # Margem vertical em pixels
+
+
 # ============== FULL CONFIG ==============
 
 
@@ -208,3 +275,5 @@ class FullConfig(BaseModel):
     music: MusicConfig = MusicConfig()
     ffmpeg: FFmpegConfig = FFmpegConfig()
     gpu: GPUConfig = GPUConfig()
+    effects: EffectsConfig = EffectsConfig()
+    subtitles: SubtitleConfig = SubtitleConfig()

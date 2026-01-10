@@ -9,8 +9,9 @@ from typing import Optional, Callable, Any
 from pathlib import Path
 
 from .text_processor import TextProcessor
-from .audio_generator import ElevenLabsGenerator
+from .audio_generator import ElevenLabsGenerator, get_audio_generator
 from .audio_merger import AudioMerger
+from .silence_remover import SilenceRemover
 from .transcriber import AssemblyAITranscriber
 from .scene_analyzer import SceneAnalyzer
 from .image_generator import WaveSpeedGenerator, get_image_generator
@@ -18,6 +19,9 @@ from .music_manager import MusicManager
 from .ai_music_generator import AIMusicGenerator
 from .audio_mixer import AudioMixer
 from .video_composer import VideoComposer
+from .effects_applier import EffectsApplier
+from .effects_manager import get_effects_manager
+from .subtitle_burner import SubtitleBurner
 
 from ..models.config import FullConfig
 from ..models.job import JobStatus, JobStatusEnum
@@ -95,18 +99,21 @@ class JobOrchestrator:
             self._add_log(f"Texto dividido em {len(chunks)} chunks")
 
             # 2. Gerar áudios
-            self._add_log("Iniciando geração de áudio com ElevenLabs...")
+            # Determinar qual provider de áudio usar
+            audio_provider_name = self.config.api.audio_provider.value if hasattr(self.config.api.audio_provider, 'value') else self.config.api.audio_provider
+            provider_display = "Minimax" if audio_provider_name == "minimax" else "ElevenLabs"
+
+            self._add_log(f"Iniciando geração de áudio com {provider_display}...")
             await self._update_status(
                 job_id, JobStatusEnum.GENERATING_AUDIO, 0.10,
                 "Gerando áudio", started_at,
-                {"chunks_total": len(chunks)}
+                {"chunks_total": len(chunks), "provider": provider_display}
             )
 
-            audio_generator = ElevenLabsGenerator(
-                api_key=self.config.api.elevenlabs.api_key,
-                voice_id=self.config.api.elevenlabs.voice_id,
-                model_id=self.config.api.elevenlabs.model_id,
-                output_dir=str(job_temp_dir)
+            audio_generator = get_audio_generator(
+                config=self.config,
+                output_dir=str(job_temp_dir),
+                log_callback=self._add_log
             )
 
             # Progress callback simples - sem asyncio.create_task para evitar tasks órfãs
@@ -145,6 +152,35 @@ class JobOrchestrator:
             merged_audio = audio_merger.merge(audio_chunks)
 
             self._add_log(f"Áudio concatenado: {merged_audio.duration_ms}ms ({merged_audio.duration_ms / 1000:.1f}s)")
+
+            # 3.5. Remover silêncios do áudio
+            self._add_log("Detectando e removendo silêncios...")
+            await self._update_status(
+                job_id, JobStatusEnum.MERGING_AUDIO, 0.27,
+                "Removendo silêncios", started_at
+            )
+
+            silence_remover = SilenceRemover(
+                output_dir=str(job_temp_dir),
+                log_callback=self._add_log
+            )
+
+            silence_result = silence_remover.remove_silences(
+                audio_path=merged_audio.path,
+                output_filename="audio_trimmed.mp3",
+                silence_threshold_db=-40,
+                min_silence_duration=0.5,
+                keep_silence_ms=200
+            )
+
+            # Atualizar o caminho do áudio para usar o arquivo sem silêncios
+            if silence_result.time_saved_ms > 0:
+                merged_audio.path = silence_result.path
+                merged_audio.duration_ms = silence_result.new_duration_ms
+                self._add_log(
+                    f"Silêncios removidos: {silence_result.silences_removed} trechos, "
+                    f"{silence_result.time_saved_ms/1000:.1f}s economizados"
+                )
 
             # 4. Transcrever com AssemblyAI
             self._add_log("Enviando áudio para transcrição com AssemblyAI...")
@@ -326,6 +362,85 @@ class JobOrchestrator:
                 audio_path=mixed_audio.path,
                 output_filename=output_filename
             )
+
+            # 9.5. Aplicar efeitos de overlay (se configurado)
+            effects_config = getattr(self.config, 'effects', None)
+            if effects_config and effects_config.enabled and effects_config.effect_id:
+                self._add_log("Aplicando efeito de overlay...")
+                await self._update_status(
+                    job_id, JobStatusEnum.COMPOSING_VIDEO, 0.92,
+                    "Aplicando efeitos", started_at
+                )
+
+                effects_manager = get_effects_manager()
+                effect_path = effects_manager.get_effect_path(effects_config.effect_id)
+
+                if effect_path:
+                    effects_applier = EffectsApplier(
+                        output_dir=str(self.output_dir),
+                        log_callback=self._add_log
+                    )
+
+                    # Gerar nome do arquivo com efeito
+                    effect_filename = f"{timestamp}_{job_id}_fx.mp4"
+
+                    effect_result = effects_applier.apply_effect(
+                        video_path=result.path,
+                        effect_path=effect_path,
+                        output_filename=effect_filename,
+                        blend_mode=effects_config.blend_mode,
+                        effect_opacity=effects_config.opacity
+                    )
+
+                    # Remover vídeo original sem efeito
+                    try:
+                        Path(result.path).unlink()
+                    except Exception:
+                        pass
+
+                    # Atualizar resultado com o vídeo com efeito
+                    result.path = effect_result.path
+                    result.file_size = effect_result.file_size
+
+                    self._add_log(f"Efeito aplicado: {effect_result.effect_applied}")
+                else:
+                    self._add_log("Aviso: Efeito configurado não encontrado, pulando...")
+
+            # 9.75. Aplicar legendas (se configurado)
+            subtitles_config = getattr(self.config, 'subtitles', None)
+            if subtitles_config and subtitles_config.enabled:
+                self._add_log("Aplicando legendas estilo filme...")
+                await self._update_status(
+                    job_id, JobStatusEnum.COMPOSING_VIDEO, 0.95,
+                    "Aplicando legendas", started_at
+                )
+
+                subtitle_burner = SubtitleBurner(
+                    output_dir=str(self.output_dir),
+                    log_callback=self._add_log
+                )
+
+                # Gerar nome do arquivo com legendas
+                subtitle_filename = f"{timestamp}_{job_id}_sub.mp4"
+
+                subtitle_result = subtitle_burner.burn_subtitles(
+                    video_path=result.path,
+                    transcription=transcription,
+                    config=subtitles_config,
+                    output_filename=subtitle_filename
+                )
+
+                # Remover vídeo anterior sem legendas
+                try:
+                    Path(result.path).unlink()
+                except Exception:
+                    pass
+
+                # Atualizar resultado com o vídeo com legendas
+                result.path = subtitle_result.path
+                result.file_size = subtitle_result.file_size
+
+                self._add_log(f"Legendas aplicadas: {subtitle_result.subtitle_count} segmentos na posição {subtitles_config.position.value}")
 
             # 10. Finalizar
             await self._update_status(
