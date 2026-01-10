@@ -21,6 +21,7 @@ from .audio_mixer import AudioMixer
 from .video_composer import VideoComposer
 from .effects_applier import EffectsApplier
 from .effects_manager import get_effects_manager
+from .subtitle_burner import SubtitleBurner
 
 from ..models.config import FullConfig
 from ..models.job import JobStatus, JobStatusEnum
@@ -404,6 +405,42 @@ class JobOrchestrator:
                     self._add_log(f"Efeito aplicado: {effect_result.effect_applied}")
                 else:
                     self._add_log("Aviso: Efeito configurado não encontrado, pulando...")
+
+            # 9.75. Aplicar legendas (se configurado)
+            subtitles_config = getattr(self.config, 'subtitles', None)
+            if subtitles_config and subtitles_config.enabled:
+                self._add_log("Aplicando legendas estilo filme...")
+                await self._update_status(
+                    job_id, JobStatusEnum.COMPOSING_VIDEO, 0.95,
+                    "Aplicando legendas", started_at
+                )
+
+                subtitle_burner = SubtitleBurner(
+                    output_dir=str(self.output_dir),
+                    log_callback=self._add_log
+                )
+
+                # Gerar nome do arquivo com legendas
+                subtitle_filename = f"{timestamp}_{job_id}_sub.mp4"
+
+                subtitle_result = subtitle_burner.burn_subtitles(
+                    video_path=result.path,
+                    transcription=transcription,
+                    config=subtitles_config,
+                    output_filename=subtitle_filename
+                )
+
+                # Remover vídeo anterior sem legendas
+                try:
+                    Path(result.path).unlink()
+                except Exception:
+                    pass
+
+                # Atualizar resultado com o vídeo com legendas
+                result.path = subtitle_result.path
+                result.file_size = subtitle_result.file_size
+
+                self._add_log(f"Legendas aplicadas: {subtitle_result.subtitle_count} segmentos na posição {subtitles_config.position.value}")
 
             # 10. Finalizar
             await self._update_status(

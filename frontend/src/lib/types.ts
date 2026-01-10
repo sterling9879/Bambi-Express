@@ -229,6 +229,20 @@ export interface VideoEffect {
   fileSize: number;
 }
 
+// Subtitle Config
+export type SubtitlePosition = 'bottom' | 'top' | 'middle';
+
+export interface SubtitleConfig {
+  enabled: boolean;
+  position: SubtitlePosition;
+  fontSize: number;
+  fontColor: string;
+  outlineColor: string;
+  outlineWidth: number;
+  backgroundOpacity: number;
+  marginVertical: number;
+}
+
 // Full Config
 export interface FullConfig {
   api: ApiConfig;
@@ -236,6 +250,7 @@ export interface FullConfig {
   ffmpeg: FFmpegConfig;
   gpu: GPUConfig;
   effects: EffectsConfig;
+  subtitles: SubtitleConfig;
 }
 
 // Job Types

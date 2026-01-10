@@ -245,6 +245,28 @@ class EffectsConfig(BaseModel):
     opacity: float = 1.0  # 0.0 a 1.0
 
 
+# ============== SUBTITLES ==============
+
+
+class SubtitlePosition(str, Enum):
+    """Posição das legendas no vídeo."""
+    BOTTOM = "bottom"  # Estilo filme tradicional
+    TOP = "top"
+    MIDDLE = "middle"
+
+
+class SubtitleConfig(BaseModel):
+    """Configuração para legendas estilo filme."""
+    enabled: bool = False
+    position: SubtitlePosition = SubtitlePosition.BOTTOM
+    font_size: int = 48  # Tamanho da fonte
+    font_color: str = "white"  # Cor do texto
+    outline_color: str = "black"  # Cor do contorno
+    outline_width: int = 3  # Espessura do contorno
+    background_opacity: float = 0.0  # Opacidade do fundo (0 = sem fundo)
+    margin_vertical: int = 50  # Margem vertical em pixels
+
+
 # ============== FULL CONFIG ==============
 
 
@@ -254,3 +276,4 @@ class FullConfig(BaseModel):
     ffmpeg: FFmpegConfig = FFmpegConfig()
     gpu: GPUConfig = GPUConfig()
     effects: EffectsConfig = EffectsConfig()
+    subtitles: SubtitleConfig = SubtitleConfig()

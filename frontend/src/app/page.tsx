@@ -7,6 +7,7 @@ import { MusicConfig } from '@/components/ConfigPanel/MusicConfig';
 import { FFmpegConfig } from '@/components/ConfigPanel/FFmpegConfig';
 import { VoicesConfig } from '@/components/ConfigPanel/VoicesConfig';
 import { EffectsConfig } from '@/components/ConfigPanel/EffectsConfig';
+import { SubtitleConfig } from '@/components/ConfigPanel/SubtitleConfig';
 import { GpuSettings } from '@/components/GpuSettings';
 import { MusicUploader } from '@/components/MusicLibrary/MusicUploader';
 import { MusicList } from '@/components/MusicLibrary/MusicList';
@@ -21,7 +22,7 @@ type Tab = 'editor' | 'batch' | 'config' | 'music' | 'history';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('editor');
-  const [configSection, setConfigSection] = useState<'api' | 'voices' | 'gpu' | 'music' | 'ffmpeg' | 'effects'>('api');
+  const [configSection, setConfigSection] = useState<'api' | 'voices' | 'gpu' | 'music' | 'ffmpeg' | 'effects' | 'subtitles'>('api');
 
   const {
     isGenerating,
@@ -188,6 +189,7 @@ export default function Home() {
                   { id: 'music' as const, label: 'Música', icon: Music },
                   { id: 'ffmpeg' as const, label: 'Vídeo', icon: Video },
                   { id: 'effects' as const, label: 'Efeitos', icon: Sparkles },
+                  { id: 'subtitles' as const, label: 'Legendas', icon: FileText },
                 ].map((item) => (
                   <button
                     key={item.id}
@@ -212,6 +214,7 @@ export default function Home() {
                 {configSection === 'music' && <MusicConfig />}
                 {configSection === 'ffmpeg' && <FFmpegConfig />}
                 {configSection === 'effects' && <EffectsConfig />}
+                {configSection === 'subtitles' && <SubtitleConfig />}
               </ErrorBoundary>
             </div>
           </div>
