@@ -246,6 +246,28 @@ class JobOrchestrator:
 
             self._add_log(f"Análise de cenas concluída: {len(scene_analysis.scenes)} cenas identificadas")
 
+            # Diagnóstico de sincronização
+            if scene_analysis.scenes:
+                scenes = scene_analysis.scenes
+                first_scene_start = scenes[0].start_ms
+                last_scene_end = scenes[-1].end_ms
+                total_scene_duration = sum(s.duration_ms for s in scenes)
+
+                self._add_log(f"[SYNC DEBUG] Audio duration: {transcription.duration_ms}ms")
+                self._add_log(f"[SYNC DEBUG] First scene starts at: {first_scene_start}ms")
+                self._add_log(f"[SYNC DEBUG] Last scene ends at: {last_scene_end}ms")
+                self._add_log(f"[SYNC DEBUG] Sum of scene durations: {total_scene_duration}ms")
+                self._add_log(f"[SYNC DEBUG] Coverage: {last_scene_end - first_scene_start}ms")
+
+                # Detectar gaps entre cenas
+                total_gaps = 0
+                for i in range(1, len(scenes)):
+                    gap = scenes[i].start_ms - scenes[i-1].end_ms
+                    if gap > 100:  # Gap maior que 100ms
+                        total_gaps += gap
+                if total_gaps > 0:
+                    self._add_log(f"[SYNC DEBUG] WARNING: Total gaps between scenes: {total_gaps}ms")
+
             # 6. Selecionar/gerar música
             self._add_log("Selecionando música de fundo...")
             await self._update_status(
