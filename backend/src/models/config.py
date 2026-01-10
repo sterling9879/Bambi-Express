@@ -134,14 +134,16 @@ class SceneDurationConfig(BaseModel):
 
 class SceneSplitMode(str, Enum):
     """Modo de divisão de cenas."""
-    PARAGRAPHS = "paragraphs"  # Baseado em parágrafos (mais preciso)
+    PARAGRAPHS = "paragraphs"  # Baseado em parágrafos da AssemblyAI (menos cenas)
+    SENTENCES = "sentences"  # Baseado em pontuação/sentenças (mais cenas)
     GEMINI = "gemini"  # Gemini decide (pode alucinar)
 
 
 class SceneConfig(BaseModel):
     """Configuração de como as cenas são divididas."""
-    split_mode: SceneSplitMode = SceneSplitMode.PARAGRAPHS
+    split_mode: SceneSplitMode = SceneSplitMode.SENTENCES  # Padrão: sentenças (mais controle)
     paragraphs_per_scene: int = Field(default=3, ge=1, le=10)  # Quantos parágrafos por cena
+    sentences_per_scene: int = Field(default=2, ge=1, le=10)  # Quantas sentenças por cena
 
 
 class TransitionConfig(BaseModel):
