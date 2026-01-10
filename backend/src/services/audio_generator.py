@@ -630,10 +630,28 @@ class MinimaxAudioGenerator:
             if not status:
                 logger.debug(f"Full API response: {data}")
 
-            if status == "completed" or data.get("data", {}).get("audio_url"):
-                audio_url = data.get("data", {}).get("audio_url") or \
-                           data.get("outputs", {}).get("audio_url") or \
-                           data.get("output", {}).get("audio_url")
+            # Check if audio is ready - look in multiple possible locations
+            inner_data = data.get("data", {})
+            outputs = inner_data.get("outputs", [])
+
+            if status == "completed" or (outputs and len(outputs) > 0):
+                # Try to find audio_url in various locations
+                audio_url = None
+
+                # Check outputs array (WaveSpeed Minimax format)
+                if outputs and len(outputs) > 0:
+                    first_output = outputs[0]
+                    if isinstance(first_output, str):
+                        audio_url = first_output
+                    elif isinstance(first_output, dict):
+                        audio_url = first_output.get("audio_url") or first_output.get("url")
+
+                # Fallback to other locations
+                if not audio_url:
+                    audio_url = inner_data.get("audio_url") or \
+                               data.get("outputs", {}).get("audio_url") or \
+                               data.get("output", {}).get("audio_url")
+
                 if audio_url:
                     return audio_url
                 raise AudioGenerationError("Resposta não contém audio_url", chunk_index)
@@ -642,7 +660,7 @@ class MinimaxAudioGenerator:
                 error_msg = data.get("error", "Geração de áudio falhou")
                 raise AudioGenerationError(error_msg, chunk_index)
 
-            elif status in ("pending", "processing", "starting", "queued", "running"):
+            elif status in ("pending", "processing", "starting", "queued", "running", "created"):
                 await asyncio.sleep(poll_interval)
             elif not status:
                 # Empty status - API might still be processing, continue polling
