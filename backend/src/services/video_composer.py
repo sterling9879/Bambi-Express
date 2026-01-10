@@ -548,23 +548,48 @@ class VideoComposer:
 
         if video_duration > audio_duration + 1:
             logger.warning(f"Video is {video_duration - audio_duration:.1f}s longer than audio, will be trimmed")
+        elif audio_duration > video_duration + 1:
+            logger.warning(f"Audio is {audio_duration - video_duration:.1f}s longer than video! Last frame will be held.")
 
-        cmd = [
-            "ffmpeg", "-y",
-            "-threads", str(FFMPEG_THREADS),
-            "-i", video_path_abs,
-            "-i", audio_path_abs,
-            "-c:v", "copy",
-            "-c:a", "aac" if cfg.audio.codec == "aac" else "libmp3lame",
-            "-b:a", f"{cfg.audio.bitrate}k",
-            "-map", "0:v:0",
-            "-map", "1:a:0",
-            "-t", str(audio_duration),  # Forçar duração igual ao áudio
-            "-shortest",
-            "-movflags", "+faststart",
-        ]
+        # Construir comando ffmpeg
+        # Se video < audio: usar tpad para estender o último frame até a duração do áudio
+        # Se video > audio: usar -t para cortar na duração do áudio
+        if audio_duration > video_duration + 0.5:
+            # Vídeo mais curto - estender o último frame
+            cmd = [
+                "ffmpeg", "-y",
+                "-threads", str(FFMPEG_THREADS),
+                "-i", video_path_abs,
+                "-i", audio_path_abs,
+                "-filter_complex", f"[0:v]tpad=stop_mode=clone:stop_duration={audio_duration - video_duration + 0.5}[v]",
+                "-map", "[v]",
+                "-map", "1:a:0",
+                "-c:v", "libx264",
+                "-preset", "fast",
+                "-crf", "23",
+                "-c:a", "aac" if cfg.audio.codec == "aac" else "libmp3lame",
+                "-b:a", f"{cfg.audio.bitrate}k",
+                "-t", str(audio_duration),
+                "-movflags", "+faststart",
+            ]
+        else:
+            # Vídeo igual ou mais longo - cortar na duração do áudio
+            cmd = [
+                "ffmpeg", "-y",
+                "-threads", str(FFMPEG_THREADS),
+                "-i", video_path_abs,
+                "-i", audio_path_abs,
+                "-c:v", "copy",
+                "-c:a", "aac" if cfg.audio.codec == "aac" else "libmp3lame",
+                "-b:a", f"{cfg.audio.bitrate}k",
+                "-map", "0:v:0",
+                "-map", "1:a:0",
+                "-t", str(audio_duration),
+                "-movflags", "+faststart",
+            ]
 
-        if cfg.audio.normalize:
+        # Nota: -af não funciona com -filter_complex, então pular normalização nesse caso
+        if cfg.audio.normalize and audio_duration <= video_duration + 0.5:
             cmd.extend(["-af", f"loudnorm=I={cfg.audio.target_lufs}:TP=-1.5:LRA=11"])
 
         cmd.append(output_path_abs)
@@ -695,14 +720,16 @@ class VideoComposer:
         max_d = self.config.scene_duration.max_duration or 6.0
 
         if mode == "auto":
-            # Usar duração do timestamp, mas respeitar min/max do config
-            return [max(min_d, min(max_d, s.duration_ms / 1000)) for s in scenes]
+            # Usar duração exata do timestamp para sincronizar com áudio
+            # Apenas garantir um mínimo para evitar cenas muito curtas
+            return [max(min_d, s.duration_ms / 1000) for s in scenes]
 
         elif mode == "fixed":
             fixed = self.config.scene_duration.fixed_duration or 4.0
             return [fixed] * len(scenes)
 
         elif mode == "range":
+            # Modo range aplica min/max limites
             return [
                 max(min_d, min(max_d, s.duration_ms / 1000))
                 for s in scenes
