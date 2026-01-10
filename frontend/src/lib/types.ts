@@ -1,3 +1,9 @@
+// Audio Provider Type
+export type AudioProvider = 'elevenlabs' | 'minimax';
+
+// Minimax Emotion Type
+export type MinimaxEmotion = 'neutral' | 'happy' | 'sad' | 'angry' | 'fearful' | 'disgusted' | 'surprised';
+
 // API Configuration Types
 export interface ApiConfig {
   elevenlabs: {
@@ -23,6 +29,14 @@ export interface ApiConfig {
     apiKey: string;
     enabled: boolean;
   };
+  minimax: {
+    voiceId: string;
+    emotion: MinimaxEmotion;
+    speed: number;
+    pitch: number;
+    volume: number;
+  };
+  audioProvider: AudioProvider;
 }
 
 // Music Types
@@ -264,6 +278,13 @@ export interface Voice {
   name: string;
   category?: string;
   labels?: Record<string, string>;
+}
+
+export interface MinimaxVoice {
+  voice_id: string;
+  name: string;
+  gender: 'male' | 'female' | 'neutral';
+  language: string;
 }
 
 // History Types

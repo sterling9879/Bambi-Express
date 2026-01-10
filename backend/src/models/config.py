@@ -43,6 +43,11 @@ class MusicMode(str, Enum):
     AI_GENERATED = "ai_generated"
 
 
+class AudioProvider(str, Enum):
+    ELEVENLABS = "elevenlabs"
+    MINIMAX = "minimax"
+
+
 class SceneDurationMode(str, Enum):
     AUTO = "auto"
     FIXED = "fixed"
@@ -80,12 +85,23 @@ class SunoConfig(ApiConfigItem):
     pass
 
 
+class MinimaxConfig(BaseModel):
+    """Configuração para Minimax Audio (via WaveSpeed)."""
+    voice_id: str = "Narrator_Man"
+    emotion: str = "neutral"  # neutral, happy, sad, angry, fearful, disgusted, surprised
+    speed: float = 1.0  # 0.5 - 2.0
+    pitch: int = 0  # -12 to 12
+    volume: float = 1.0  # 0.0 - 1.0
+
+
 class ApiConfig(BaseModel):
     elevenlabs: ElevenLabsConfig = ElevenLabsConfig()
     assemblyai: AssemblyAIConfig = AssemblyAIConfig()
     gemini: GeminiConfig = GeminiConfig()
     wavespeed: WaveSpeedConfig = WaveSpeedConfig()
     suno: Optional[SunoConfig] = None
+    minimax: MinimaxConfig = MinimaxConfig()
+    audio_provider: AudioProvider = AudioProvider.ELEVENLABS
 
 
 # ============== FFMPEG CONFIGS ==============

@@ -11,6 +11,7 @@ import type {
   ApiTestResult,
   CreditsResponse,
   Voice,
+  MinimaxVoice,
   Channel,
   ChannelCreate,
   VideoHistory,
@@ -141,6 +142,16 @@ export const configApi = {
   getVoices: async (): Promise<Voice[]> => {
     const { data } = await api.get('/api/config/voices');
     return toCamelCase<Voice[]>(data.voices);
+  },
+
+  getMinimaxVoices: async (): Promise<MinimaxVoice[]> => {
+    const { data } = await api.get('/api/config/minimax-voices');
+    return data.voices as MinimaxVoice[];
+  },
+
+  getMinimaxEmotions: async (): Promise<string[]> => {
+    const { data } = await api.get('/api/config/minimax-emotions');
+    return data.emotions as string[];
   },
 };
 

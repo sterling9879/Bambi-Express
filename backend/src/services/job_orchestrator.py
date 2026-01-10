@@ -9,7 +9,7 @@ from typing import Optional, Callable, Any
 from pathlib import Path
 
 from .text_processor import TextProcessor
-from .audio_generator import ElevenLabsGenerator
+from .audio_generator import ElevenLabsGenerator, get_audio_generator
 from .audio_merger import AudioMerger
 from .transcriber import AssemblyAITranscriber
 from .scene_analyzer import SceneAnalyzer
@@ -95,18 +95,21 @@ class JobOrchestrator:
             self._add_log(f"Texto dividido em {len(chunks)} chunks")
 
             # 2. Gerar áudios
-            self._add_log("Iniciando geração de áudio com ElevenLabs...")
+            # Determinar qual provider de áudio usar
+            audio_provider_name = self.config.api.audio_provider.value if hasattr(self.config.api.audio_provider, 'value') else self.config.api.audio_provider
+            provider_display = "Minimax" if audio_provider_name == "minimax" else "ElevenLabs"
+
+            self._add_log(f"Iniciando geração de áudio com {provider_display}...")
             await self._update_status(
                 job_id, JobStatusEnum.GENERATING_AUDIO, 0.10,
                 "Gerando áudio", started_at,
-                {"chunks_total": len(chunks)}
+                {"chunks_total": len(chunks), "provider": provider_display}
             )
 
-            audio_generator = ElevenLabsGenerator(
-                api_key=self.config.api.elevenlabs.api_key,
-                voice_id=self.config.api.elevenlabs.voice_id,
-                model_id=self.config.api.elevenlabs.model_id,
-                output_dir=str(job_temp_dir)
+            audio_generator = get_audio_generator(
+                config=self.config,
+                output_dir=str(job_temp_dir),
+                log_callback=self._add_log
             )
 
             # Progress callback simples - sem asyncio.create_task para evitar tasks órfãs

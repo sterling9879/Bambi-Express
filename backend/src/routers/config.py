@@ -17,10 +17,11 @@ from ..models.config import (
     GeminiConfig,
     WaveSpeedConfig,
     SunoConfig,
+    MinimaxConfig,
     FFmpegConfig,
     MusicConfig,
 )
-from ..services.audio_generator import ElevenLabsGenerator
+from ..services.audio_generator import ElevenLabsGenerator, MinimaxAudioGenerator
 from ..services.transcriber import AssemblyAITranscriber
 from ..services.scene_analyzer import SceneAnalyzer
 from ..services.image_generator import WaveSpeedGenerator
@@ -101,7 +102,7 @@ async def update_ffmpeg_config(ffmpeg_config: FFmpegConfig):
 
 
 class TestApiRequest(BaseModel):
-    api: Literal["elevenlabs", "assemblyai", "gemini", "wavespeed", "suno"]
+    api: Literal["elevenlabs", "assemblyai", "gemini", "wavespeed", "suno", "minimax"]
 
 
 class TestApiResponse(BaseModel):
@@ -190,6 +191,22 @@ async def test_api_connection(request: TestApiRequest):
                 details=result
             )
 
+        elif request.api == "minimax":
+            # Minimax usa a API key do WaveSpeed
+            if not config.api.wavespeed.api_key:
+                return TestApiResponse(connected=False, error="WaveSpeed API key não configurada (necessária para Minimax)")
+
+            generator = MinimaxAudioGenerator(
+                api_key=config.api.wavespeed.api_key,
+                voice_id=config.api.minimax.voice_id if config.api.minimax else "Narrator_Man"
+            )
+            result = await generator.test_connection()
+            return TestApiResponse(
+                connected=result.get("connected", False),
+                error=result.get("error"),
+                details=result
+            )
+
         else:
             return TestApiResponse(connected=False, error=f"API desconhecida: {request.api}")
 
@@ -258,6 +275,24 @@ async def get_available_voices():
         return VoicesResponse(voices=voices)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/minimax-voices", response_model=VoicesResponse)
+async def get_minimax_voices():
+    """
+    Lista vozes disponíveis no Minimax.
+    """
+    # Minimax tem vozes predefinidas, não precisa de API key
+    voices = MinimaxAudioGenerator.AVAILABLE_VOICES
+    return VoicesResponse(voices=voices)
+
+
+@router.get("/minimax-emotions")
+async def get_minimax_emotions():
+    """
+    Lista emoções disponíveis no Minimax.
+    """
+    return {"emotions": MinimaxAudioGenerator.AVAILABLE_EMOTIONS}
 
 
 # ============== GPU / LOCAL IMAGE GENERATION ==============

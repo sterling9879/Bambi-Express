@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { configApi } from '@/lib/api';
 import { useConfigStore } from '@/stores/configStore';
-import type { FullConfig, ApiTestResult, CreditsResponse, Voice } from '@/lib/types';
+import type { FullConfig, ApiTestResult, CreditsResponse, Voice, MinimaxVoice } from '@/lib/types';
 
 export function useApiConfig() {
   const queryClient = useQueryClient();
@@ -85,6 +85,24 @@ export function useApiConfig() {
     enabled: !!config?.api?.elevenlabs?.apiKey,
   });
 
+  // Get Minimax voices
+  const {
+    data: minimaxVoices,
+  } = useQuery({
+    queryKey: ['minimaxVoices'],
+    queryFn: configApi.getMinimaxVoices,
+    staleTime: 24 * 60 * 60 * 1000, // 24 hours - static data
+  });
+
+  // Get Minimax emotions
+  const {
+    data: minimaxEmotions,
+  } = useQuery({
+    queryKey: ['minimaxEmotions'],
+    queryFn: configApi.getMinimaxEmotions,
+    staleTime: 24 * 60 * 60 * 1000, // 24 hours - static data
+  });
+
   const saveConfig = useCallback(
     async (newConfig: FullConfig) => {
       await saveMutation.mutateAsync(newConfig);
@@ -105,5 +123,7 @@ export function useApiConfig() {
     refetchCredits,
     voices: voices || [],
     refetchVoices,
+    minimaxVoices: minimaxVoices || [],
+    minimaxEmotions: minimaxEmotions || [],
   };
 }
