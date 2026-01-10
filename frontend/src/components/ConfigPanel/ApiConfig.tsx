@@ -488,23 +488,45 @@ export function ApiConfig() {
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="flux-dev-ultra-fast">Flux Dev Ultra Fast (Recomendado)</option>
-                <option value="flux-schnell">Flux Schnell</option>
-                <option value="flux-dev">Flux Dev</option>
+                <option value="flux-schnell">Flux Schnell (Mais Rápido)</option>
+                <option value="flux-dev">Flux Dev (Maior Qualidade)</option>
               </select>
+              <p className="text-xs text-gray-500 mt-1">
+                {localConfig.wavespeed.model === 'flux-schnell'
+                  ? 'Modelo rápido ideal para prototipagem. Menor custo por imagem.'
+                  : localConfig.wavespeed.model === 'flux-dev'
+                  ? 'Máxima qualidade, processamento mais lento. Ideal para produção final.'
+                  : 'Balanço entre velocidade e qualidade. Recomendado para uso geral.'}
+              </p>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Resolução
-              </label>
-              <select
-                value={localConfig.wavespeed.resolution}
-                onChange={(e) => updateField('wavespeed.resolution', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              >
-                <option value="1920x1080">1920x1080 (Landscape)</option>
-                <option value="1080x1920">1080x1920 (Vertical)</option>
-                <option value="1280x720">1280x720 (HD)</option>
-              </select>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Resolução
+                </label>
+                <select
+                  value={localConfig.wavespeed.resolution}
+                  onChange={(e) => updateField('wavespeed.resolution', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="1920x1080">1920x1080 (Landscape)</option>
+                  <option value="1080x1920">1080x1920 (Vertical)</option>
+                  <option value="1280x720">1280x720 (HD)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Formato de Saída
+                </label>
+                <select
+                  value={localConfig.wavespeed.outputFormat || 'png'}
+                  onChange={(e) => updateField('wavespeed.outputFormat', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="png">PNG (Maior qualidade)</option>
+                  <option value="jpeg">JPEG (Menor tamanho)</option>
+                </select>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

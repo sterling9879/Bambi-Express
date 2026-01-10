@@ -76,9 +76,10 @@ class GeminiConfig(ApiConfigItem):
 
 
 class WaveSpeedConfig(ApiConfigItem):
-    model: str = "flux-dev-ultra-fast"
+    model: str = "flux-dev-ultra-fast"  # flux-dev-ultra-fast, flux-schnell, flux-dev
     resolution: str = "1920x1080"
     image_style: str = "cinematic, dramatic lighting, 8k, hyperrealistic, professional photography"
+    output_format: str = "png"  # png ou jpeg
 
 
 class SunoConfig(ApiConfigItem):
@@ -209,6 +210,13 @@ class MusicConfig(BaseModel):
 class ImageProvider(str, Enum):
     WAVESPEED = "wavespeed"
     LOCAL = "local"
+
+
+class WaveSpeedModel(str, Enum):
+    """Modelos disponíveis no WaveSpeed para geração de imagens."""
+    FLUX_DEV_ULTRA_FAST = "flux-dev-ultra-fast"  # Alta qualidade, mais lento
+    FLUX_SCHNELL = "flux-schnell"  # Rápido, menor qualidade
+    FLUX_DEV = "flux-dev"  # Balanço entre qualidade e velocidade
 
 
 class VramMode(str, Enum):

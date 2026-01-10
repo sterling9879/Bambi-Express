@@ -49,6 +49,7 @@ class WaveSpeedGenerator:
         model: str = "flux-dev-ultra-fast",
         resolution: str = "1920x1080",
         output_dir: str = "temp",
+        output_format: str = "png",
         log_callback: Optional[Callable[[str], None]] = None
     ):
         self.api_key = api_key
@@ -56,6 +57,7 @@ class WaveSpeedGenerator:
         self.width, self.height = map(int, resolution.split("x"))
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_format = output_format
         self.log_callback = log_callback
         self._client: Optional[httpx.AsyncClient] = None
 
@@ -314,30 +316,49 @@ class WaveSpeedGenerator:
             generation_time_ms=0
         )
 
+    def _get_model_params(self, prompt: str) -> dict:
+        """Retorna parâmetros específicos para cada modelo."""
+        base_params = {
+            "prompt": prompt,
+            "size": f"{self.width}*{self.height}",
+            "num_images": 1,
+            "enable_base64_output": False,
+            "enable_sync_mode": False,
+            "output_format": self.output_format,
+            "seed": -1,
+        }
+
+        if self.model == "flux-schnell":
+            # flux-schnell: modelo rápido, parâmetros simplificados
+            return {
+                **base_params,
+                "strength": 0.8,
+            }
+        else:
+            # flux-dev-ultra-fast e flux-dev: parâmetros avançados
+            return {
+                **base_params,
+                "guidance_scale": 3.5,
+                "num_inference_steps": 28,
+                "strength": 0.8,
+            }
+
     async def _generate_image(self, scene: Scene) -> GeneratedImage:
         """Gera imagem para uma única cena usando cliente compartilhado."""
         start_time = time.time()
 
-        self._log(f"Generating image for scene {scene.scene_index}...")
+        self._log(f"Generating image for scene {scene.scene_index} with {self.model}...")
 
         try:
             client = await self._get_client()
 
+            # Obter parâmetros específicos do modelo
+            params = self._get_model_params(scene.image_prompt)
+
             # Iniciar geração
             response = await client.post(
                 f"{self.BASE_URL}/wavespeed-ai/{self.model}",
-                json={
-                    "prompt": scene.image_prompt,
-                    "size": f"{self.width}*{self.height}",
-                    "num_images": 1,
-                    "enable_base64_output": False,
-                    "enable_sync_mode": False,
-                    "guidance_scale": 3.5,
-                    "num_inference_steps": 28,
-                    "output_format": "png",
-                    "seed": -1,
-                    "strength": 0.8
-                }
+                json=params
             )
 
             # Erros que NÃO devem ser retentados
@@ -383,8 +404,9 @@ class WaveSpeedGenerator:
             image_response = await client.get(image_url)
             image_response.raise_for_status()
 
-            # Salvar
-            output_path = self.output_dir / f"scene_{scene.scene_index}.png"
+            # Salvar com extensão correta
+            ext = self.output_format if self.output_format in ["png", "jpeg", "jpg"] else "png"
+            output_path = self.output_dir / f"scene_{scene.scene_index}.{ext}"
             output_path.write_bytes(image_response.content)
 
             generation_time = int((time.time() - start_time) * 1000)
@@ -733,6 +755,7 @@ def get_image_generator(
                 model=wavespeed.model,
                 resolution=wavespeed.resolution,
                 output_dir=output_dir,
+                output_format=getattr(wavespeed, 'output_format', 'png'),
                 log_callback=log_callback,
             )
         else:

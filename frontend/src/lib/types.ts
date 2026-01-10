@@ -24,6 +24,7 @@ export interface ApiConfig {
     model: 'flux-dev-ultra-fast' | 'flux-schnell' | 'flux-dev';
     resolution: '1920x1080' | '1280x720' | '1080x1920';
     imageStyle?: string;
+    outputFormat?: 'png' | 'jpeg';
   };
   suno?: {
     apiKey: string;
