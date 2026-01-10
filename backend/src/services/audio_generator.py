@@ -622,9 +622,15 @@ class MinimaxAudioGenerator:
             response.raise_for_status()
 
             data = response.json()
-            status = data.get("status", "")
 
-            if status == "completed":
+            # Try multiple possible status field locations
+            status = data.get("status") or data.get("data", {}).get("status") or ""
+
+            # Log full response if status is unknown for debugging
+            if not status:
+                logger.debug(f"Full API response: {data}")
+
+            if status == "completed" or data.get("data", {}).get("audio_url"):
                 audio_url = data.get("data", {}).get("audio_url") or \
                            data.get("outputs", {}).get("audio_url") or \
                            data.get("output", {}).get("audio_url")
@@ -636,10 +642,13 @@ class MinimaxAudioGenerator:
                 error_msg = data.get("error", "Geração de áudio falhou")
                 raise AudioGenerationError(error_msg, chunk_index)
 
-            elif status in ("pending", "processing", "starting"):
+            elif status in ("pending", "processing", "starting", "queued", "running"):
+                await asyncio.sleep(poll_interval)
+            elif not status:
+                # Empty status - API might still be processing, continue polling
                 await asyncio.sleep(poll_interval)
             else:
-                logger.warning(f"Status desconhecido: {status}")
+                logger.warning(f"Status desconhecido: {status}, response: {data}")
                 await asyncio.sleep(poll_interval)
 
         raise AudioGenerationError("Timeout aguardando geração de áudio", chunk_index)
