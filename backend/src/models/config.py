@@ -256,9 +256,18 @@ class SubtitlePosition(str, Enum):
     MIDDLE = "middle"
 
 
+class SubtitleLanguage(str, Enum):
+    """Idioma das legendas."""
+    PT = "pt"  # Português
+    EN = "en"  # English
+    ES = "es"  # Español
+    AUTO = "auto"  # Auto-detectar (usar idioma do áudio)
+
+
 class SubtitleConfig(BaseModel):
     """Configuração para legendas estilo filme."""
     enabled: bool = False
+    language: SubtitleLanguage = SubtitleLanguage.AUTO
     position: SubtitlePosition = SubtitlePosition.BOTTOM
     font_size: int = 48  # Tamanho da fonte
     font_color: str = "white"  # Cor do texto

@@ -3,8 +3,15 @@
 import { useState, useEffect } from 'react';
 import { Subtitles, Save, AlignCenter, AlignVerticalJustifyEnd, AlignVerticalJustifyStart } from 'lucide-react';
 import { useApiConfig } from '@/hooks/useApiConfig';
-import type { SubtitleConfig as SubtitleConfigType, SubtitlePosition } from '@/lib/types';
+import type { SubtitleConfig as SubtitleConfigType, SubtitlePosition, SubtitleLanguage } from '@/lib/types';
 import toast from 'react-hot-toast';
+
+const LANGUAGES: { value: SubtitleLanguage; label: string }[] = [
+  { value: 'auto', label: 'Auto (usar idioma do áudio)' },
+  { value: 'pt', label: 'Português' },
+  { value: 'en', label: 'English' },
+  { value: 'es', label: 'Español' },
+];
 
 const POSITIONS: { value: SubtitlePosition; label: string; description: string; icon: typeof AlignCenter }[] = [
   { value: 'bottom', label: 'Inferior', description: 'Estilo filme tradicional', icon: AlignVerticalJustifyEnd },
@@ -31,6 +38,7 @@ export function SubtitleConfig() {
   // Local state for subtitle config
   const [localConfig, setLocalConfig] = useState<SubtitleConfigType>({
     enabled: false,
+    language: 'auto',
     position: 'bottom',
     fontSize: 48,
     fontColor: 'white',
@@ -89,6 +97,27 @@ export function SubtitleConfig() {
       </div>
 
       <div className="p-6 space-y-6">
+        {/* Language Selector */}
+        <div>
+          <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
+            Idioma das Legendas
+          </label>
+          <select
+            value={config.language}
+            onChange={(e) => handleConfigChange({ ...config, language: e.target.value as SubtitleLanguage })}
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          >
+            {LANGUAGES.map((lang) => (
+              <option key={lang.value} value={lang.value}>
+                {lang.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            Define o idioma para fontes e formatação das legendas
+          </p>
+        </div>
+
         {/* Position Selector */}
         <div>
           <label className="block text-sm font-medium text-gray-900 dark:text-white mb-3">
