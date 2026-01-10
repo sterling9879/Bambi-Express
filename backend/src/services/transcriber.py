@@ -8,7 +8,7 @@ import asyncio
 from typing import Optional, Callable, List
 import logging
 
-from ..models.video import Word, Segment, TranscriptionResult
+from ..models.video import Word, Segment, Paragraph, TranscriptionResult
 
 logger = logging.getLogger(__name__)
 
@@ -168,8 +168,14 @@ class AssemblyAITranscriber:
 
             if status == "completed":
                 if progress_callback:
+                    progress_callback("fetching_paragraphs", 0.9)
+
+                # Buscar parágrafos do endpoint dedicado
+                paragraphs = await self._fetch_paragraphs(client, transcript_id)
+
+                if progress_callback:
                     progress_callback("completed", 1.0)
-                return self._parse_result(data)
+                return self._parse_result(data, paragraphs)
 
             elif status == "error":
                 raise TranscriptionError(
@@ -183,7 +189,39 @@ class AssemblyAITranscriber:
 
                 await asyncio.sleep(3)
 
-    def _parse_result(self, data: dict) -> TranscriptionResult:
+    async def _fetch_paragraphs(
+        self,
+        client: httpx.AsyncClient,
+        transcript_id: str
+    ) -> List[Paragraph]:
+        """Busca parágrafos do endpoint /paragraphs da AssemblyAI."""
+        try:
+            url = f"{self.BASE_URL}/transcript/{transcript_id}/paragraphs"
+            response = await client.get(url, headers=self.headers)
+            response.raise_for_status()
+
+            data = response.json()
+            paragraphs = [
+                Paragraph(
+                    text=p["text"],
+                    start_ms=p["start"],
+                    end_ms=p["end"]
+                )
+                for p in data.get("paragraphs", [])
+            ]
+
+            logger.info(f"Fetched {len(paragraphs)} paragraphs from AssemblyAI")
+            return paragraphs
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch paragraphs: {e}. Will use fallback.")
+            return []
+
+    def _parse_result(
+        self,
+        data: dict,
+        paragraphs: List[Paragraph] = None
+    ) -> TranscriptionResult:
         """Converte resposta da API em TranscriptionResult."""
 
         words = [
@@ -208,6 +246,7 @@ class AssemblyAITranscriber:
         return TranscriptionResult(
             segments=segments,
             words=words,
+            paragraphs=paragraphs or [],
             full_text=data.get("text", ""),
             duration_ms=duration_ms,
             confidence=avg_confidence,
