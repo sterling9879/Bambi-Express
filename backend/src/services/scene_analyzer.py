@@ -77,6 +77,7 @@ class SceneAnalyzer:
         api_key: str,
         model: str = "gemini-2.0-flash",
         image_style: str = "",
+        scene_context: str = "",
         log_callback: Optional[callable] = None
     ):
         genai.configure(api_key=api_key)
@@ -90,6 +91,7 @@ class SceneAnalyzer:
             )
         )
         self.image_style = image_style
+        self.scene_context = scene_context
         self._model_name = model
         self.log_callback = log_callback
 
@@ -240,6 +242,10 @@ class SceneAnalyzer:
         if self.image_style:
             style_instruction = f'\nESTILO VISUAL OBRIGATÓRIO: Todos os prompts devem terminar com: "{self.image_style}"'
 
+        context_instruction = ""
+        if self.scene_context:
+            context_instruction = f'\n\n## CONTEXTO VISUAL DO USUÁRIO\nO usuário quer que TODAS as imagens sigam este contexto/tema: "{self.scene_context}"\nAdapte todos os prompts para refletir este contexto visual.'
+
         chunk_note = ""
         if chunk_info:
             chunk_note = f"\n(Este é o chunk {chunk_info['index']+1} de {chunk_info['total']})"
@@ -278,7 +284,7 @@ Cada cena terá uma imagem gerada que deve ILUSTRAR VISUALMENTE o que está send
 2. **ESCREVA EM INGLÊS**
 3. **SEJA ESPECÍFICO** - Mínimo 25 palavras descrevendo a cena
 4. **SEJA CINEMATOGRÁFICO** - Use termos como "cinematic shot", "dramatic lighting", "8k", "wide angle"
-5. **MANTENHA CONSISTÊNCIA** - Mesmo estilo visual em todas as cenas{style_instruction}
+5. **MANTENHA CONSISTÊNCIA** - Mesmo estilo visual em todas as cenas{style_instruction}{context_instruction}
 
 ## EXEMPLO
 
