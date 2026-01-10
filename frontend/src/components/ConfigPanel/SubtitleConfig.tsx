@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Captions, Save, AlignCenter, AlignBottom, AlignTop } from 'lucide-react';
+import { Subtitles, Save, AlignCenter, AlignVerticalJustifyEnd, AlignVerticalJustifyStart } from 'lucide-react';
 import { useApiConfig } from '@/hooks/useApiConfig';
 import type { SubtitleConfig as SubtitleConfigType, SubtitlePosition } from '@/lib/types';
 import toast from 'react-hot-toast';
 
-const POSITIONS: { value: SubtitlePosition; label: string; description: string; icon: typeof AlignBottom }[] = [
-  { value: 'bottom', label: 'Inferior', description: 'Estilo filme tradicional', icon: AlignBottom },
-  { value: 'top', label: 'Superior', description: 'Topo do vídeo', icon: AlignTop },
+const POSITIONS: { value: SubtitlePosition; label: string; description: string; icon: typeof AlignCenter }[] = [
+  { value: 'bottom', label: 'Inferior', description: 'Estilo filme tradicional', icon: AlignVerticalJustifyEnd },
+  { value: 'top', label: 'Superior', description: 'Topo do vídeo', icon: AlignVerticalJustifyStart },
   { value: 'middle', label: 'Centro', description: 'Centralizado', icon: AlignCenter },
 ];
 
@@ -68,7 +68,7 @@ export function SubtitleConfig() {
       <div className="p-6 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white flex items-center">
-            <Captions className="w-5 h-5 mr-2" />
+            <Subtitles className="w-5 h-5 mr-2" />
             Legendas
           </h2>
           <div className="flex items-center space-x-2">
