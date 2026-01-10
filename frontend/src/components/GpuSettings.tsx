@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Cpu, Check, X, RefreshCw, Loader2, Zap, HardDrive } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 
@@ -39,6 +40,7 @@ interface AvailableModel {
 }
 
 export function GpuSettings() {
+  const queryClient = useQueryClient();
   const [gpuInfo, setGpuInfo] = useState<GPUInfo | null>(null);
   const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
   const [availableModels, setAvailableModels] = useState<Record<string, AvailableModel>>({});
@@ -157,6 +159,8 @@ export function GpuSettings() {
         if (res.data.model) {
           setModelInfo(res.data.model);
         }
+        // Invalidar cache do config para que outras telas usem o valor atualizado
+        await queryClient.invalidateQueries({ queryKey: ['config'] });
         toast.success(
           newProvider === 'local'
             ? 'GPU Local ativada!'
