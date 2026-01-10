@@ -73,6 +73,7 @@ class AssemblyAIConfig(ApiConfigItem):
 
 class GeminiConfig(ApiConfigItem):
     model: str = "gemini-2.0-flash"
+    scene_context: str = ""  # Contexto visual para as imagens (ex: "futurista", "medieval")
 
 
 class WaveSpeedConfig(ApiConfigItem):

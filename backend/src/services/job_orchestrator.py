@@ -234,6 +234,7 @@ class JobOrchestrator:
                 api_key=self.config.api.gemini.api_key,
                 model=self.config.api.gemini.model,
                 image_style=self.config.api.wavespeed.image_style,
+                scene_context=getattr(self.config.api.gemini, 'scene_context', ''),
                 log_callback=self._add_log
             )
 

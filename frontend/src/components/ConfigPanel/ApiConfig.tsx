@@ -449,6 +449,21 @@ export function ApiConfig() {
                 <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
               </select>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Contexto Visual das Cenas
+              </label>
+              <textarea
+                value={localConfig.gemini.sceneContext || ''}
+                onChange={(e) => updateField('gemini.sceneContext', e.target.value)}
+                placeholder="Ex: estilo futurista cyberpunk, cenário medieval fantasia, visual minimalista moderno..."
+                rows={2}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Descreva brevemente o estilo/tema visual desejado. O Gemini usará isso para gerar todos os prompts de imagem.
+              </p>
+            </div>
             <button
               onClick={() => handleTestApi('gemini')}
               disabled={testingApi === 'gemini'}

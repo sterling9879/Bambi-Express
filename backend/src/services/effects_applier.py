@@ -32,6 +32,14 @@ class EffectsApplier:
     - Preservação de qualidade do vídeo original
     """
 
+    # Mapeamento de nomes user-friendly para nomes do ffmpeg
+    BLEND_MODE_MAP = {
+        "lighten": "lighten",
+        "screen": "screen",
+        "add": "addition",  # ffmpeg usa "addition", não "add"
+        "addition": "addition",
+    }
+
     def __init__(
         self,
         output_dir: str = "temp",
@@ -157,9 +165,11 @@ class EffectsApplier:
 
         # Construir filtro de blend
         # Para fundo preto, usamos "lighten" ou "screen" que mantém apenas pixels mais claros
+        # Mapear nome do blend mode para o nome do ffmpeg
+        ffmpeg_blend_mode = self.BLEND_MODE_MAP.get(blend_mode, "lighten")
         filter_complex = (
             f"{effect_input},{scale_filter}{opacity_filter}[effect];"
-            f"[0:v][effect]blend=all_mode={blend_mode}:shortest=1[outv]"
+            f"[0:v][effect]blend=all_mode={ffmpeg_blend_mode}:shortest=1[outv]"
         )
 
         cmd = [

@@ -18,6 +18,7 @@ export interface ApiConfig {
   gemini: {
     apiKey: string;
     model: 'gemini-2.0-flash' | 'gemini-2.0-flash-lite' | 'gemini-2.5-pro';
+    sceneContext?: string;
   };
   wavespeed: {
     apiKey: string;
