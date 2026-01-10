@@ -14,6 +14,7 @@ from .audio_merger import AudioMerger
 from .silence_remover import SilenceRemover
 from .transcriber import AssemblyAITranscriber
 from .scene_analyzer import SceneAnalyzer
+from .paragraph_scene_splitter import ParagraphSceneSplitter
 from .image_generator import WaveSpeedGenerator, get_image_generator
 from .music_manager import MusicManager
 from .ai_music_generator import AIMusicGenerator
@@ -224,25 +225,77 @@ class JobOrchestrator:
             )
 
             # 5. Analisar cenas
-            self._add_log("Iniciando análise de cenas com Gemini...")
-            await self._update_status(
-                job_id, JobStatusEnum.ANALYZING_SCENES, 0.40,
-                "Analisando cenas", started_at
-            )
+            # Verificar modo de divisão de cenas
+            scene_config = getattr(self.config.ffmpeg, 'scene_config', None)
+            split_mode = scene_config.split_mode.value if scene_config else "paragraphs"
 
-            scene_analyzer = SceneAnalyzer(
-                api_key=self.config.api.gemini.api_key,
-                model=self.config.api.gemini.model,
-                image_style=self.config.api.wavespeed.image_style,
-                scene_context=getattr(self.config.api.gemini, 'scene_context', ''),
-                log_callback=self._add_log
-            )
+            from ..models.video import SceneAnalysis
 
-            scene_analysis = await scene_analyzer.analyze(
-                transcription,
-                min_scene_duration=self.config.ffmpeg.scene_duration.min_duration or 3.0,
-                max_scene_duration=self.config.ffmpeg.scene_duration.max_duration or 6.0
-            )
+            if split_mode == "paragraphs":
+                # Modo baseado em parágrafos (mais preciso, sem alucinação)
+                paragraphs_per_scene = scene_config.paragraphs_per_scene if scene_config else 3
+
+                self._add_log(f"Dividindo cenas por parágrafos ({paragraphs_per_scene} por cena)...")
+                await self._update_status(
+                    job_id, JobStatusEnum.ANALYZING_SCENES, 0.40,
+                    "Dividindo em parágrafos", started_at
+                )
+
+                # Usar ParagraphSceneSplitter para criar cenas
+                paragraph_splitter = ParagraphSceneSplitter(
+                    paragraphs_per_scene=paragraphs_per_scene,
+                    log_callback=self._add_log
+                )
+
+                scenes = paragraph_splitter.split_into_scenes(transcription)
+
+                self._add_log(f"Cenas criadas: {len(scenes)} cenas baseadas em parágrafos")
+
+                # Gerar prompts de imagem com Gemini
+                self._add_log("Gerando prompts de imagem com Gemini...")
+                await self._update_status(
+                    job_id, JobStatusEnum.ANALYZING_SCENES, 0.42,
+                    "Gerando prompts de imagem", started_at
+                )
+
+                scene_analyzer = SceneAnalyzer(
+                    api_key=self.config.api.gemini.api_key,
+                    model=self.config.api.gemini.model,
+                    image_style=self.config.api.wavespeed.image_style,
+                    scene_context=getattr(self.config.api.gemini, 'scene_context', ''),
+                    log_callback=self._add_log
+                )
+
+                scenes = await scene_analyzer.generate_image_prompts(scenes)
+
+                # Criar SceneAnalysis com as cenas
+                scene_analysis = SceneAnalysis(
+                    style_guide="",
+                    scenes=scenes,
+                    music_cues=[]
+                )
+
+            else:
+                # Modo Gemini (decide tudo autonomamente - pode alucinar)
+                self._add_log("Iniciando análise de cenas com Gemini...")
+                await self._update_status(
+                    job_id, JobStatusEnum.ANALYZING_SCENES, 0.40,
+                    "Analisando cenas", started_at
+                )
+
+                scene_analyzer = SceneAnalyzer(
+                    api_key=self.config.api.gemini.api_key,
+                    model=self.config.api.gemini.model,
+                    image_style=self.config.api.wavespeed.image_style,
+                    scene_context=getattr(self.config.api.gemini, 'scene_context', ''),
+                    log_callback=self._add_log
+                )
+
+                scene_analysis = await scene_analyzer.analyze(
+                    transcription,
+                    min_scene_duration=self.config.ffmpeg.scene_duration.min_duration or 3.0,
+                    max_scene_duration=self.config.ffmpeg.scene_duration.max_duration or 6.0
+                )
 
             self._add_log(f"Análise de cenas concluída: {len(scene_analysis.scenes)} cenas identificadas")
 

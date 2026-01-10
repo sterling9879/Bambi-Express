@@ -115,6 +115,12 @@ export type TransitionType =
   | 'none';
 
 export type SceneDurationMode = 'auto' | 'fixed' | 'range';
+export type SceneSplitMode = 'paragraphs' | 'gemini';
+
+export interface SceneConfig {
+  splitMode: SceneSplitMode;
+  paragraphsPerScene: number;
+}
 
 export interface Resolution {
   width: number;
@@ -171,6 +177,7 @@ export interface FFmpegConfig {
   fps: 24 | 30 | 60;
   crf: number;
   preset: 'ultrafast' | 'fast' | 'medium' | 'slow' | 'veryslow';
+  sceneConfig: SceneConfig;
   sceneDuration: SceneDurationConfig;
   transition: TransitionConfig;
   effects: EffectsConfig;

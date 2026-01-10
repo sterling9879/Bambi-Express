@@ -132,6 +132,18 @@ class SceneDurationConfig(BaseModel):
     max_duration: Optional[float] = 6.0
 
 
+class SceneSplitMode(str, Enum):
+    """Modo de divisão de cenas."""
+    PARAGRAPHS = "paragraphs"  # Baseado em parágrafos (mais preciso)
+    GEMINI = "gemini"  # Gemini decide (pode alucinar)
+
+
+class SceneConfig(BaseModel):
+    """Configuração de como as cenas são divididas."""
+    split_mode: SceneSplitMode = SceneSplitMode.PARAGRAPHS
+    paragraphs_per_scene: int = Field(default=3, ge=1, le=10)  # Quantos parágrafos por cena
+
+
 class TransitionConfig(BaseModel):
     type: TransitionType = TransitionType.FADE
     duration: float = Field(default=0.5, ge=0.1, le=2.0)
@@ -174,6 +186,7 @@ class FFmpegConfig(BaseModel):
     fps: int = 30
     crf: int = Field(default=23, ge=18, le=28)
     preset: str = "medium"
+    scene_config: SceneConfig = SceneConfig()
     scene_duration: SceneDurationConfig = SceneDurationConfig()
     transition: TransitionConfig = TransitionConfig()
     effects: EffectsConfig = EffectsConfig()

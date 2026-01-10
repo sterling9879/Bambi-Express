@@ -194,6 +194,121 @@ class SceneAnalyzer:
             music_cues=all_music_cues
         )
 
+    async def generate_image_prompts(
+        self,
+        scenes: List[Scene],
+        batch_size: int = 10
+    ) -> List[Scene]:
+        """
+        Gera prompts de imagem para cenas já definidas.
+
+        Usado quando as cenas são criadas pelo ParagraphSceneSplitter
+        e só precisamos que o Gemini gere os prompts de imagem.
+
+        Args:
+            scenes: Lista de cenas com texto mas sem image_prompt
+            batch_size: Quantas cenas processar por vez
+
+        Returns:
+            Lista de cenas com image_prompt preenchido
+        """
+        if not scenes:
+            return []
+
+        self._log(f"Gerando prompts de imagem para {len(scenes)} cenas...")
+
+        # Processar em batches para não sobrecarregar
+        for i in range(0, len(scenes), batch_size):
+            batch = scenes[i:i + batch_size]
+            self._log(f"Processando batch {i//batch_size + 1}/{(len(scenes) + batch_size - 1)//batch_size}...")
+
+            # Construir prompt para o batch
+            prompt = self._build_prompt_for_scenes(batch)
+
+            try:
+                response = await self.model.generate_content_async(prompt)
+                prompts_data = self._parse_prompts_response(response.text)
+
+                # Aplicar prompts às cenas
+                for j, scene in enumerate(batch):
+                    if j < len(prompts_data):
+                        scene.image_prompt = prompts_data[j].get("image_prompt", "")
+                        scene.mood = prompts_data[j].get("mood", "neutro")
+
+            except Exception as e:
+                self._log(f"Erro ao gerar prompts para batch: {e}")
+                # Fallback: gerar prompts genéricos
+                for scene in batch:
+                    scene.image_prompt = f"Cinematic visualization of: {scene.text[:100]}, dramatic lighting, 8k, {self.image_style}"
+                    scene.mood = "neutro"
+
+        self._log(f"Prompts gerados para {len(scenes)} cenas")
+        return scenes
+
+    def _build_prompt_for_scenes(self, scenes: List[Scene]) -> str:
+        """Constrói prompt para gerar image_prompts para cenas específicas."""
+
+        style_instruction = ""
+        if self.image_style:
+            style_instruction = f'\nESTILO VISUAL OBRIGATÓRIO: Todos os prompts devem terminar com: "{self.image_style}"'
+
+        context_instruction = ""
+        if self.scene_context:
+            context_instruction = f'\nCONTEXTO VISUAL: {self.scene_context}'
+
+        scenes_json = []
+        for s in scenes:
+            scenes_json.append({
+                "scene_index": s.scene_index,
+                "text": s.text[:500]  # Limitar texto para não estourar tokens
+            })
+
+        return f"""Você é um diretor de arte profissional. Gere prompts de imagem cinematográficos para cada cena.
+
+## REGRAS
+1. Prompts em INGLÊS
+2. Mínimo 25 palavras por prompt
+3. Seja específico e cinematográfico
+4. Use termos: "cinematic shot", "dramatic lighting", "8k", "wide angle"{style_instruction}{context_instruction}
+
+## CENAS
+{json.dumps(scenes_json, ensure_ascii=False, indent=2)}
+
+## FORMATO DE RESPOSTA (JSON)
+{{
+    "prompts": [
+        {{"scene_index": 0, "image_prompt": "...", "mood": "inspirador"}},
+        {{"scene_index": 1, "image_prompt": "...", "mood": "calmo"}}
+    ]
+}}
+
+MOODS PERMITIDOS: alegre, animado, calmo, dramatico, inspirador, melancolico, neutro, epico, suspense"""
+
+    def _parse_prompts_response(self, response_text: str) -> List[dict]:
+        """Parse da resposta do Gemini para prompts de imagem."""
+        try:
+            cleaned = response_text.strip()
+            if cleaned.startswith("```"):
+                lines = cleaned.split("\n")
+                start_idx = 1 if lines[0].startswith("```") else 0
+                end_idx = len(lines)
+                for i, line in enumerate(lines[1:], 1):
+                    if line.startswith("```"):
+                        end_idx = i
+                        break
+                cleaned = "\n".join(lines[start_idx:end_idx])
+
+            if cleaned.startswith("json"):
+                cleaned = cleaned[4:]
+
+            cleaned = self._extract_json_object(cleaned)
+            data = json.loads(cleaned)
+            return data.get("prompts", [])
+
+        except Exception as e:
+            logger.error(f"Erro ao parsear resposta de prompts: {e}")
+            return []
+
     def _split_words_into_chunks(self, words: List) -> List[List]:
         """
         Divide palavras em chunks de ~60 segundos.

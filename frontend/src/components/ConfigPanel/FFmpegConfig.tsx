@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Save } from 'lucide-react';
 import { useApiConfig } from '@/hooks/useApiConfig';
 import toast from 'react-hot-toast';
-import type { FFmpegConfig as FFmpegConfigType, TransitionType, SceneDurationMode } from '@/lib/types';
+import type { FFmpegConfig as FFmpegConfigType, TransitionType, SceneDurationMode, SceneSplitMode } from '@/lib/types';
 
 const TRANSITION_TYPES: { value: TransitionType; label: string }[] = [
   { value: 'fade', label: 'Fade (dissolve suave)' },
@@ -167,6 +167,59 @@ export function FFmpegConfig() {
                 <span>Menor arquivo</span>
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* Scene Config */}
+        <section>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+            Divisão de Cenas
+          </h3>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              {[
+                { value: 'paragraphs', label: 'Por parágrafos (mais preciso)', description: 'Divide cenas baseado em sentenças/parágrafos da transcrição. Usa timestamps exatos.' },
+                { value: 'gemini', label: 'Automático com IA', description: 'O Gemini decide onde dividir as cenas. Pode ser menos preciso.' },
+              ].map((option) => (
+                <label key={option.value} className="flex items-start space-x-3 p-3 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                  <input
+                    type="radio"
+                    name="sceneSplitMode"
+                    value={option.value}
+                    checked={(localConfig.sceneConfig?.splitMode || 'paragraphs') === option.value}
+                    onChange={(e) => updateField('sceneConfig.splitMode', e.target.value as SceneSplitMode)}
+                    className="w-4 h-4 mt-1 text-primary-600 focus:ring-primary-500"
+                  />
+                  <div>
+                    <span className="block text-gray-700 dark:text-gray-300 font-medium">{option.label}</span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">{option.description}</span>
+                  </div>
+                </label>
+              ))}
+            </div>
+
+            {(localConfig.sceneConfig?.splitMode || 'paragraphs') === 'paragraphs' && (
+              <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Parágrafos por cena: {localConfig.sceneConfig?.paragraphsPerScene || 3}
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  value={localConfig.sceneConfig?.paragraphsPerScene || 3}
+                  onChange={(e) => updateField('sceneConfig.paragraphsPerScene', parseInt(e.target.value))}
+                  className="w-full h-2 bg-gray-200 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>Mais cenas (curtas)</span>
+                  <span>Menos cenas (longas)</span>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Ex: 20 parágrafos com 3 por cena = 7 cenas (6 de 3 + 1 de 2)
+                </p>
+              </div>
+            )}
           </div>
         </section>
 
