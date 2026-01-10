@@ -45,10 +45,18 @@ class Segment(BaseModel):
     words: List[Word]
 
 
+class Paragraph(BaseModel):
+    """Parágrafo da transcrição (retornado pela AssemblyAI)."""
+    text: str
+    start_ms: int
+    end_ms: int
+
+
 class TranscriptionResult(BaseModel):
     """Resultado completo da transcrição."""
     segments: List[Segment]
     words: List[Word]
+    paragraphs: List[Paragraph] = []  # Parágrafos da AssemblyAI
     full_text: str
     duration_ms: int
     confidence: float

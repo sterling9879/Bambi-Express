@@ -3,27 +3,28 @@ Serviço para dividir transcrição em cenas baseado em parágrafos.
 
 Ao invés de deixar o Gemini decidir as divisões (que pode alucinar),
 este serviço:
-1. Agrupa palavras em parágrafos (sentenças terminando em .!?)
+1. Usa parágrafos retornados diretamente pela AssemblyAI (endpoint /paragraphs)
 2. Agrupa parágrafos em cenas baseado na configuração do usuário
 3. Usa timestamps exatos da transcrição (sem alucinação)
+
+Fallback: Se a AssemblyAI não retornar parágrafos, agrupa por pontuação.
 """
 
 import logging
 from typing import List, Optional, Callable
 from dataclasses import dataclass
 
-from ..models.video import Scene, TranscriptionResult, Word
+from ..models.video import Scene, TranscriptionResult, Word, Paragraph as APIParagraph
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class Paragraph:
-    """Um parágrafo (sentença) da transcrição."""
+class LocalParagraph:
+    """Um parágrafo local (usado no fallback por pontuação)."""
     text: str
     start_ms: int
     end_ms: int
-    words: List[Word]
 
 
 class ParagraphSceneSplitter:
@@ -31,10 +32,9 @@ class ParagraphSceneSplitter:
     Divide transcrição em cenas baseado em parágrafos.
 
     Fluxo:
-    1. Recebe palavras com timestamps da AssemblyAI
-    2. Agrupa em parágrafos (por pontuação: . ! ?)
-    3. Agrupa parágrafos em cenas (baseado em paragraphs_per_scene)
-    4. Retorna cenas com timestamps exatos
+    1. Usa parágrafos da AssemblyAI (ou fallback por pontuação)
+    2. Agrupa parágrafos em cenas (baseado em paragraphs_per_scene)
+    3. Retorna cenas com timestamps exatos
     """
 
     def __init__(
@@ -51,9 +51,10 @@ class ParagraphSceneSplitter:
         if self.log_callback:
             self.log_callback(message)
 
-    def split_into_paragraphs(self, words: List[Word]) -> List[Paragraph]:
+    def _fallback_split_into_paragraphs(self, words: List[Word]) -> List[LocalParagraph]:
         """
-        Agrupa palavras em parágrafos baseado em pontuação final.
+        Fallback: Agrupa palavras em parágrafos baseado em pontuação final.
+        Usado apenas se a AssemblyAI não retornar parágrafos.
 
         Uma sentença termina quando uma palavra termina com . ! ? ou ...
         """
@@ -70,22 +71,20 @@ class ParagraphSceneSplitter:
             text = word.text.strip()
             if text.endswith(('.', '!', '?', '...', '。', '！', '？')):
                 if current_words:
-                    paragraph = Paragraph(
+                    paragraph = LocalParagraph(
                         text=" ".join(w.text for w in current_words),
                         start_ms=current_words[0].start_ms,
-                        end_ms=current_words[-1].end_ms,
-                        words=current_words.copy()
+                        end_ms=current_words[-1].end_ms
                     )
                     paragraphs.append(paragraph)
                     current_words = []
 
         # Adicionar palavras restantes como último parágrafo
         if current_words:
-            paragraph = Paragraph(
+            paragraph = LocalParagraph(
                 text=" ".join(w.text for w in current_words),
                 start_ms=current_words[0].start_ms,
-                end_ms=current_words[-1].end_ms,
-                words=current_words.copy()
+                end_ms=current_words[-1].end_ms
             )
             paragraphs.append(paragraph)
 
@@ -98,16 +97,31 @@ class ParagraphSceneSplitter:
         """
         Divide transcrição em cenas baseado em parágrafos.
 
+        Usa parágrafos da AssemblyAI se disponíveis, senão faz fallback
+        para detecção por pontuação.
+
         Args:
             transcription: Resultado da transcrição com palavras e timestamps
 
         Returns:
             Lista de cenas com timestamps exatos
         """
-        # 1. Agrupar palavras em parágrafos
-        paragraphs = self.split_into_paragraphs(transcription.words)
-
-        self._log(f"Transcrição dividida em {len(paragraphs)} parágrafos")
+        # 1. Usar parágrafos da AssemblyAI ou fallback
+        if transcription.paragraphs:
+            # Usar parágrafos da AssemblyAI (mais preciso)
+            paragraphs = [
+                LocalParagraph(
+                    text=p.text,
+                    start_ms=p.start_ms,
+                    end_ms=p.end_ms
+                )
+                for p in transcription.paragraphs
+            ]
+            self._log(f"Usando {len(paragraphs)} parágrafos da AssemblyAI")
+        else:
+            # Fallback: detectar por pontuação
+            paragraphs = self._fallback_split_into_paragraphs(transcription.words)
+            self._log(f"Fallback: {len(paragraphs)} parágrafos detectados por pontuação")
 
         if not paragraphs:
             self._log("AVISO: Nenhum parágrafo encontrado!")
