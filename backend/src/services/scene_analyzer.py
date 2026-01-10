@@ -72,6 +72,26 @@ class SceneAnalyzer:
     # Para roteiros longos (20+ min), processamos em partes de 1 minuto
     MAX_CHUNK_DURATION_MS = 60000
 
+    # Schema simplificado para geração de prompts apenas
+    PROMPTS_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "prompts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "scene_index": {"type": "integer"},
+                        "image_prompt": {"type": "string"},
+                        "mood": {"type": "string"}
+                    },
+                    "required": ["scene_index", "image_prompt", "mood"]
+                }
+            }
+        },
+        "required": ["prompts"]
+    }
+
     def __init__(
         self,
         api_key: str,
@@ -81,6 +101,8 @@ class SceneAnalyzer:
         log_callback: Optional[callable] = None
     ):
         genai.configure(api_key=api_key)
+
+        # Modelo para análise completa de cenas (com schema rígido)
         self.model = genai.GenerativeModel(
             model,
             generation_config=genai.GenerationConfig(
@@ -90,6 +112,18 @@ class SceneAnalyzer:
                 max_output_tokens=65536,
             )
         )
+
+        # Modelo para geração de prompts apenas (schema simplificado)
+        self.prompts_model = genai.GenerativeModel(
+            model,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                response_schema=self.PROMPTS_SCHEMA,
+                temperature=0.7,
+                max_output_tokens=32768,
+            )
+        )
+
         self.image_style = image_style
         self.scene_context = scene_context
         self._model_name = model
@@ -226,7 +260,8 @@ class SceneAnalyzer:
             prompt = self._build_prompt_for_scenes(batch)
 
             try:
-                response = await self.model.generate_content_async(prompt)
+                # Usar modelo específico para prompts (com schema simplificado)
+                response = await self.prompts_model.generate_content_async(prompt)
                 prompts_data = self._parse_prompts_response(response.text)
 
                 # Aplicar prompts às cenas
