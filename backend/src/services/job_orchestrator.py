@@ -194,6 +194,17 @@ class JobOrchestrator:
                 api_key=self.config.api.assemblyai.api_key
             )
 
+            # Determinar idioma da transcrição
+            # Se legendas estão habilitadas com idioma específico, usar esse idioma
+            subtitles_config = getattr(self.config, 'subtitles', None)
+            transcription_language = self.config.api.assemblyai.language_code
+
+            if subtitles_config and subtitles_config.enabled:
+                subtitle_lang = subtitles_config.language.value if hasattr(subtitles_config.language, 'value') else subtitles_config.language
+                if subtitle_lang != "auto":
+                    transcription_language = subtitle_lang
+                    self._add_log(f"Usando idioma das legendas para transcrição: {transcription_language}")
+
             # Progress callback para transcrição
             def transcribe_progress(s, p):
                 try:
@@ -215,7 +226,7 @@ class JobOrchestrator:
 
             transcription = await transcriber.transcribe(
                 audio_path=merged_audio.path,
-                language_code=self.config.api.assemblyai.language_code,
+                language_code=transcription_language,
                 progress_callback=transcribe_progress
             )
 
