@@ -19,6 +19,8 @@ from .music_manager import MusicManager
 from .ai_music_generator import AIMusicGenerator
 from .audio_mixer import AudioMixer
 from .video_composer import VideoComposer
+from .effects_applier import EffectsApplier
+from .effects_manager import get_effects_manager
 
 from ..models.config import FullConfig
 from ..models.job import JobStatus, JobStatusEnum
@@ -359,6 +361,49 @@ class JobOrchestrator:
                 audio_path=mixed_audio.path,
                 output_filename=output_filename
             )
+
+            # 9.5. Aplicar efeitos de overlay (se configurado)
+            effects_config = getattr(self.config, 'effects', None)
+            if effects_config and effects_config.enabled and effects_config.effect_id:
+                self._add_log("Aplicando efeito de overlay...")
+                await self._update_status(
+                    job_id, JobStatusEnum.COMPOSING_VIDEO, 0.92,
+                    "Aplicando efeitos", started_at
+                )
+
+                effects_manager = get_effects_manager()
+                effect_path = effects_manager.get_effect_path(effects_config.effect_id)
+
+                if effect_path:
+                    effects_applier = EffectsApplier(
+                        output_dir=str(self.output_dir),
+                        log_callback=self._add_log
+                    )
+
+                    # Gerar nome do arquivo com efeito
+                    effect_filename = f"{timestamp}_{job_id}_fx.mp4"
+
+                    effect_result = effects_applier.apply_effect(
+                        video_path=result.path,
+                        effect_path=effect_path,
+                        output_filename=effect_filename,
+                        blend_mode=effects_config.blend_mode,
+                        effect_opacity=effects_config.opacity
+                    )
+
+                    # Remover vídeo original sem efeito
+                    try:
+                        Path(result.path).unlink()
+                    except Exception:
+                        pass
+
+                    # Atualizar resultado com o vídeo com efeito
+                    result.path = effect_result.path
+                    result.file_size = effect_result.file_size
+
+                    self._add_log(f"Efeito aplicado: {effect_result.effect_applied}")
+                else:
+                    self._add_log("Aviso: Efeito configurado não encontrado, pulando...")
 
             # 10. Finalizar
             await self._update_status(

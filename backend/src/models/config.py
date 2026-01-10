@@ -234,6 +234,17 @@ class GPUConfig(BaseModel):
     auto_fallback_to_api: bool = True  # Se local falhar, usa WaveSpeed
 
 
+# ============== VIDEO EFFECTS ==============
+
+
+class EffectsConfig(BaseModel):
+    """Configuração para efeitos de overlay em vídeos."""
+    enabled: bool = False
+    effect_id: Optional[str] = None  # ID do efeito selecionado
+    blend_mode: str = "lighten"  # lighten, screen, add
+    opacity: float = 1.0  # 0.0 a 1.0
+
+
 # ============== FULL CONFIG ==============
 
 
@@ -242,3 +253,4 @@ class FullConfig(BaseModel):
     music: MusicConfig = MusicConfig()
     ffmpeg: FFmpegConfig = FFmpegConfig()
     gpu: GPUConfig = GPUConfig()
+    effects: EffectsConfig = EffectsConfig()

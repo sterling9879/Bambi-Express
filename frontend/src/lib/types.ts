@@ -207,12 +207,35 @@ export interface ModelInfo {
   quantized: boolean;
 }
 
+// Effects Config
+export type BlendMode = 'lighten' | 'screen' | 'add';
+
+export interface EffectsConfig {
+  enabled: boolean;
+  effectId?: string;
+  blendMode: BlendMode;
+  opacity: number;
+}
+
+export interface VideoEffect {
+  id: string;
+  name: string;
+  filename: string;
+  durationMs: number;
+  description: string;
+  category: string;
+  thumbnailUrl?: string;
+  createdAt: string;
+  fileSize: number;
+}
+
 // Full Config
 export interface FullConfig {
   api: ApiConfig;
   music: MusicConfig;
   ffmpeg: FFmpegConfig;
   gpu: GPUConfig;
+  effects: EffectsConfig;
 }
 
 // Job Types

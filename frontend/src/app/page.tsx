@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Settings, Music, Video, FileText, History, Cpu, Layers, Mic } from 'lucide-react';
+import { Settings, Music, Video, FileText, History, Cpu, Layers, Mic, Sparkles } from 'lucide-react';
 import { ApiConfig } from '@/components/ConfigPanel/ApiConfig';
 import { MusicConfig } from '@/components/ConfigPanel/MusicConfig';
 import { FFmpegConfig } from '@/components/ConfigPanel/FFmpegConfig';
 import { VoicesConfig } from '@/components/ConfigPanel/VoicesConfig';
+import { EffectsConfig } from '@/components/ConfigPanel/EffectsConfig';
 import { GpuSettings } from '@/components/GpuSettings';
 import { MusicUploader } from '@/components/MusicLibrary/MusicUploader';
 import { MusicList } from '@/components/MusicLibrary/MusicList';
@@ -20,7 +21,7 @@ type Tab = 'editor' | 'batch' | 'config' | 'music' | 'history';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('editor');
-  const [configSection, setConfigSection] = useState<'api' | 'voices' | 'gpu' | 'music' | 'ffmpeg'>('api');
+  const [configSection, setConfigSection] = useState<'api' | 'voices' | 'gpu' | 'music' | 'ffmpeg' | 'effects'>('api');
 
   const {
     isGenerating,
@@ -186,6 +187,7 @@ export default function Home() {
                   { id: 'gpu' as const, label: 'GPU Local', icon: Cpu },
                   { id: 'music' as const, label: 'Música', icon: Music },
                   { id: 'ffmpeg' as const, label: 'Vídeo', icon: Video },
+                  { id: 'effects' as const, label: 'Efeitos', icon: Sparkles },
                 ].map((item) => (
                   <button
                     key={item.id}
@@ -209,6 +211,7 @@ export default function Home() {
                 {configSection === 'gpu' && <GpuSettings />}
                 {configSection === 'music' && <MusicConfig />}
                 {configSection === 'ffmpeg' && <FFmpegConfig />}
+                {configSection === 'effects' && <EffectsConfig />}
               </ErrorBoundary>
             </div>
           </div>

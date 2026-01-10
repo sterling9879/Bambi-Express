@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .routers import config_router, music_router, video_router, jobs_router, batch_router
 from .routers.history import router as history_router
+from .routers.effects import router as effects_router
 
 # Configure logging
 logging.basicConfig(
@@ -33,6 +34,8 @@ async def lifespan(app: FastAPI):
         "storage/temp",
         "storage/outputs",
         "storage/cache",
+        "storage/effects",
+        "storage/effects/thumbnails",
     ]
     for dir_path in directories:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
@@ -68,6 +71,7 @@ app.include_router(video_router)
 app.include_router(jobs_router)
 app.include_router(history_router)
 app.include_router(batch_router)
+app.include_router(effects_router)
 
 # Mount static files for outputs
 outputs_dir = Path("storage/outputs")
@@ -102,6 +106,7 @@ async def api_info():
             "jobs": "/api/jobs",
             "history": "/api/history",
             "batch": "/api/batch",
+            "effects": "/api/effects",
         },
         "documentation": "/docs",
     }
