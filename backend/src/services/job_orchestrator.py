@@ -11,6 +11,7 @@ from pathlib import Path
 from .text_processor import TextProcessor
 from .audio_generator import ElevenLabsGenerator, get_audio_generator
 from .audio_merger import AudioMerger
+from .silence_remover import SilenceRemover
 from .transcriber import AssemblyAITranscriber
 from .scene_analyzer import SceneAnalyzer
 from .image_generator import WaveSpeedGenerator, get_image_generator
@@ -148,6 +149,35 @@ class JobOrchestrator:
             merged_audio = audio_merger.merge(audio_chunks)
 
             self._add_log(f"Áudio concatenado: {merged_audio.duration_ms}ms ({merged_audio.duration_ms / 1000:.1f}s)")
+
+            # 3.5. Remover silêncios do áudio
+            self._add_log("Detectando e removendo silêncios...")
+            await self._update_status(
+                job_id, JobStatusEnum.MERGING_AUDIO, 0.27,
+                "Removendo silêncios", started_at
+            )
+
+            silence_remover = SilenceRemover(
+                output_dir=str(job_temp_dir),
+                log_callback=self._add_log
+            )
+
+            silence_result = silence_remover.remove_silences(
+                audio_path=merged_audio.path,
+                output_filename="audio_trimmed.mp3",
+                silence_threshold_db=-40,
+                min_silence_duration=0.5,
+                keep_silence_ms=200
+            )
+
+            # Atualizar o caminho do áudio para usar o arquivo sem silêncios
+            if silence_result.time_saved_ms > 0:
+                merged_audio.path = silence_result.path
+                merged_audio.duration_ms = silence_result.new_duration_ms
+                self._add_log(
+                    f"Silêncios removidos: {silence_result.silences_removed} trechos, "
+                    f"{silence_result.time_saved_ms/1000:.1f}s economizados"
+                )
 
             # 4. Transcrever com AssemblyAI
             self._add_log("Enviando áudio para transcrição com AssemblyAI...")
