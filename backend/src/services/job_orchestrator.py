@@ -238,29 +238,38 @@ class JobOrchestrator:
             # 5. Analisar cenas
             # Verificar modo de divisão de cenas
             scene_config = getattr(self.config.ffmpeg, 'scene_config', None)
-            split_mode = scene_config.split_mode.value if scene_config else "paragraphs"
+            split_mode = scene_config.split_mode.value if scene_config else "sentences"
 
             from ..models.video import SceneAnalysis
+            from .paragraph_scene_splitter import SceneSplitter
 
-            if split_mode == "paragraphs":
-                # Modo baseado em parágrafos (mais preciso, sem alucinação)
+            if split_mode in ("paragraphs", "sentences"):
+                # Modos baseados em timestamps exatos (sem alucinação)
                 paragraphs_per_scene = scene_config.paragraphs_per_scene if scene_config else 3
+                sentences_per_scene = getattr(scene_config, 'sentences_per_scene', 2) if scene_config else 2
 
-                self._add_log(f"Dividindo cenas por parágrafos ({paragraphs_per_scene} por cena)...")
-                await self._update_status(
-                    job_id, JobStatusEnum.ANALYZING_SCENES, 0.40,
-                    "Dividindo em parágrafos", started_at
-                )
-
-                # Usar ParagraphSceneSplitter para criar cenas
-                paragraph_splitter = ParagraphSceneSplitter(
+                scene_splitter = SceneSplitter(
                     paragraphs_per_scene=paragraphs_per_scene,
+                    sentences_per_scene=sentences_per_scene,
                     log_callback=self._add_log
                 )
 
-                scenes = paragraph_splitter.split_into_scenes(transcription)
+                if split_mode == "paragraphs":
+                    self._add_log(f"Dividindo cenas por parágrafos ({paragraphs_per_scene} por cena)...")
+                    await self._update_status(
+                        job_id, JobStatusEnum.ANALYZING_SCENES, 0.40,
+                        "Dividindo em parágrafos", started_at
+                    )
+                    scenes = scene_splitter.split_by_paragraphs(transcription)
+                else:  # sentences
+                    self._add_log(f"Dividindo cenas por sentenças ({sentences_per_scene} por cena)...")
+                    await self._update_status(
+                        job_id, JobStatusEnum.ANALYZING_SCENES, 0.40,
+                        "Dividindo em sentenças", started_at
+                    )
+                    scenes = scene_splitter.split_by_sentences(transcription)
 
-                self._add_log(f"Cenas criadas: {len(scenes)} cenas baseadas em parágrafos")
+                self._add_log(f"Cenas criadas: {len(scenes)} cenas")
 
                 # Gerar prompts de imagem com Gemini
                 self._add_log("Gerando prompts de imagem com Gemini...")

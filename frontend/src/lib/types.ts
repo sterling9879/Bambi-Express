@@ -115,11 +115,12 @@ export type TransitionType =
   | 'none';
 
 export type SceneDurationMode = 'auto' | 'fixed' | 'range';
-export type SceneSplitMode = 'paragraphs' | 'gemini';
+export type SceneSplitMode = 'paragraphs' | 'sentences' | 'gemini';
 
 export interface SceneConfig {
   splitMode: SceneSplitMode;
   paragraphsPerScene: number;
+  sentencesPerScene: number;
 }
 
 export interface Resolution {

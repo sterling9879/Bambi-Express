@@ -1,13 +1,12 @@
 """
-Serviço para dividir transcrição em cenas baseado em parágrafos.
+Serviço para dividir transcrição em cenas.
 
-Ao invés de deixar o Gemini decidir as divisões (que pode alucinar),
-este serviço:
-1. Usa parágrafos retornados diretamente pela AssemblyAI (endpoint /paragraphs)
-2. Agrupa parágrafos em cenas baseado na configuração do usuário
-3. Usa timestamps exatos da transcrição (sem alucinação)
+Modos disponíveis:
+1. PARAGRAPHS - Usa parágrafos da AssemblyAI (menos cenas, mais longas)
+2. SENTENCES - Divide por pontuação/sentenças (mais cenas, mais curtas)
+3. GEMINI - Deixa o Gemini decidir (pode alucinar)
 
-Fallback: Se a AssemblyAI não retornar parágrafos, agrupa por pontuação.
+Todos usam timestamps exatos da transcrição para sincronização perfeita.
 """
 
 import logging
@@ -20,29 +19,30 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class LocalParagraph:
-    """Um parágrafo local (usado no fallback por pontuação)."""
+class TextSegment:
+    """Um segmento de texto (parágrafo ou sentença)."""
     text: str
     start_ms: int
     end_ms: int
 
 
-class ParagraphSceneSplitter:
+class SceneSplitter:
     """
-    Divide transcrição em cenas baseado em parágrafos.
+    Divide transcrição em cenas.
 
-    Fluxo:
-    1. Usa parágrafos da AssemblyAI (ou fallback por pontuação)
-    2. Agrupa parágrafos em cenas (baseado em paragraphs_per_scene)
-    3. Retorna cenas com timestamps exatos
+    Suporta dois modos:
+    - Parágrafos: Usa parágrafos da AssemblyAI (menos cenas)
+    - Sentenças: Divide por pontuação (mais cenas)
     """
 
     def __init__(
         self,
         paragraphs_per_scene: int = 3,
+        sentences_per_scene: int = 2,
         log_callback: Optional[Callable[[str], None]] = None
     ):
         self.paragraphs_per_scene = paragraphs_per_scene
+        self.sentences_per_scene = sentences_per_scene
         self.log_callback = log_callback
 
     def _log(self, message: str):
@@ -51,17 +51,15 @@ class ParagraphSceneSplitter:
         if self.log_callback:
             self.log_callback(message)
 
-    def _fallback_split_into_paragraphs(self, words: List[Word]) -> List[LocalParagraph]:
+    def _split_into_sentences(self, words: List[Word]) -> List[TextSegment]:
         """
-        Fallback: Agrupa palavras em parágrafos baseado em pontuação final.
-        Usado apenas se a AssemblyAI não retornar parágrafos.
-
+        Divide palavras em sentenças baseado em pontuação final.
         Uma sentença termina quando uma palavra termina com . ! ? ou ...
         """
         if not words:
             return []
 
-        paragraphs = []
+        sentences = []
         current_words = []
 
         for word in words:
@@ -71,46 +69,32 @@ class ParagraphSceneSplitter:
             text = word.text.strip()
             if text.endswith(('.', '!', '?', '...', '。', '！', '？')):
                 if current_words:
-                    paragraph = LocalParagraph(
+                    sentence = TextSegment(
                         text=" ".join(w.text for w in current_words),
                         start_ms=current_words[0].start_ms,
                         end_ms=current_words[-1].end_ms
                     )
-                    paragraphs.append(paragraph)
+                    sentences.append(sentence)
                     current_words = []
 
-        # Adicionar palavras restantes como último parágrafo
+        # Adicionar palavras restantes como última sentença
         if current_words:
-            paragraph = LocalParagraph(
+            sentence = TextSegment(
                 text=" ".join(w.text for w in current_words),
                 start_ms=current_words[0].start_ms,
                 end_ms=current_words[-1].end_ms
             )
-            paragraphs.append(paragraph)
+            sentences.append(sentence)
 
-        return paragraphs
+        return sentences
 
-    def split_into_scenes(
-        self,
-        transcription: TranscriptionResult
-    ) -> List[Scene]:
+    def _get_paragraphs(self, transcription: TranscriptionResult) -> List[TextSegment]:
         """
-        Divide transcrição em cenas baseado em parágrafos.
-
-        Usa parágrafos da AssemblyAI se disponíveis, senão faz fallback
-        para detecção por pontuação.
-
-        Args:
-            transcription: Resultado da transcrição com palavras e timestamps
-
-        Returns:
-            Lista de cenas com timestamps exatos
+        Obtém parágrafos da AssemblyAI ou faz fallback para sentenças.
         """
-        # 1. Usar parágrafos da AssemblyAI ou fallback
         if transcription.paragraphs:
-            # Usar parágrafos da AssemblyAI (mais preciso)
             paragraphs = [
-                LocalParagraph(
+                TextSegment(
                     text=p.text,
                     start_ms=p.start_ms,
                     end_ms=p.end_ms
@@ -118,42 +102,48 @@ class ParagraphSceneSplitter:
                 for p in transcription.paragraphs
             ]
             self._log(f"Usando {len(paragraphs)} parágrafos da AssemblyAI")
+            return paragraphs
         else:
-            # Fallback: detectar por pontuação
-            paragraphs = self._fallback_split_into_paragraphs(transcription.words)
-            self._log(f"Fallback: {len(paragraphs)} parágrafos detectados por pontuação")
+            # Fallback: usar sentenças como parágrafos
+            sentences = self._split_into_sentences(transcription.words)
+            self._log(f"Fallback: {len(sentences)} sentenças (sem parágrafos da API)")
+            return sentences
 
-        if not paragraphs:
-            self._log("AVISO: Nenhum parágrafo encontrado!")
+    def _group_into_scenes(
+        self,
+        segments: List[TextSegment],
+        segments_per_scene: int,
+        segment_type: str
+    ) -> List[Scene]:
+        """
+        Agrupa segmentos (parágrafos ou sentenças) em cenas.
+        """
+        if not segments:
+            self._log("AVISO: Nenhum segmento encontrado!")
             return []
 
-        # 2. Agrupar parágrafos em cenas
         scenes = []
         scene_index = 0
 
-        for i in range(0, len(paragraphs), self.paragraphs_per_scene):
-            # Pegar os próximos N parágrafos
-            scene_paragraphs = paragraphs[i:i + self.paragraphs_per_scene]
+        for i in range(0, len(segments), segments_per_scene):
+            scene_segments = segments[i:i + segments_per_scene]
 
-            if not scene_paragraphs:
+            if not scene_segments:
                 continue
 
-            # Calcular timestamps da cena
-            start_ms = scene_paragraphs[0].start_ms
-            end_ms = scene_paragraphs[-1].end_ms
+            start_ms = scene_segments[0].start_ms
+            end_ms = scene_segments[-1].end_ms
             duration_ms = end_ms - start_ms
 
-            # Texto da cena
-            scene_text = " ".join(p.text for p in scene_paragraphs)
+            scene_text = " ".join(s.text for s in scene_segments)
 
-            # Criar cena (sem image_prompt ainda - Gemini vai gerar depois)
             scene = Scene(
                 scene_index=scene_index,
                 text=scene_text,
                 start_ms=start_ms,
                 end_ms=end_ms,
                 duration_ms=duration_ms,
-                image_prompt="",  # Será preenchido pelo Gemini
+                image_prompt="",
                 mood="neutro",
                 mood_intensity=0.5,
                 is_mood_transition=False
@@ -161,9 +151,41 @@ class ParagraphSceneSplitter:
             scenes.append(scene)
             scene_index += 1
 
-        self._log(f"Criadas {len(scenes)} cenas ({self.paragraphs_per_scene} parágrafos por cena)")
+        self._log(f"Criadas {len(scenes)} cenas ({segments_per_scene} {segment_type} por cena)")
+        return scenes
 
-        # Log de diagnóstico
+    def split_by_paragraphs(self, transcription: TranscriptionResult) -> List[Scene]:
+        """
+        Divide em cenas usando parágrafos da AssemblyAI.
+        Resulta em menos cenas, mais longas.
+        """
+        paragraphs = self._get_paragraphs(transcription)
+        scenes = self._group_into_scenes(
+            paragraphs,
+            self.paragraphs_per_scene,
+            "parágrafos"
+        )
+        self._log_sync_info(scenes, transcription)
+        return scenes
+
+    def split_by_sentences(self, transcription: TranscriptionResult) -> List[Scene]:
+        """
+        Divide em cenas usando sentenças (pontuação).
+        Resulta em mais cenas, mais curtas.
+        """
+        sentences = self._split_into_sentences(transcription.words)
+        self._log(f"Dividindo {len(sentences)} sentenças em cenas")
+
+        scenes = self._group_into_scenes(
+            sentences,
+            self.sentences_per_scene,
+            "sentenças"
+        )
+        self._log_sync_info(scenes, transcription)
+        return scenes
+
+    def _log_sync_info(self, scenes: List[Scene], transcription: TranscriptionResult):
+        """Log de diagnóstico de sincronização."""
         if scenes:
             total_duration = sum(s.duration_ms for s in scenes)
             self._log(f"[SYNC] Duração total das cenas: {total_duration}ms")
@@ -171,4 +193,6 @@ class ParagraphSceneSplitter:
             self._log(f"[SYNC] Primeira cena começa em: {scenes[0].start_ms}ms")
             self._log(f"[SYNC] Última cena termina em: {scenes[-1].end_ms}ms")
 
-        return scenes
+
+# Alias para compatibilidade
+ParagraphSceneSplitter = SceneSplitter

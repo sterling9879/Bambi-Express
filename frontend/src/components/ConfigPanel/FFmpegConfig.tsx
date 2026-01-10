@@ -178,15 +178,16 @@ export function FFmpegConfig() {
           <div className="space-y-4">
             <div className="space-y-2">
               {[
-                { value: 'paragraphs', label: 'Por parágrafos (mais preciso)', description: 'Divide cenas baseado em sentenças/parágrafos da transcrição. Usa timestamps exatos.' },
-                { value: 'gemini', label: 'Automático com IA', description: 'O Gemini decide onde dividir as cenas. Pode ser menos preciso.' },
+                { value: 'sentences', label: 'Por sentenças (recomendado)', description: 'Divide cenas por pontos finais (.!?). Mais cenas, mais controle.' },
+                { value: 'paragraphs', label: 'Por parágrafos', description: 'Usa parágrafos da AssemblyAI. Menos cenas, mais longas.' },
+                { value: 'gemini', label: 'Automático com IA', description: 'O Gemini decide onde dividir. Pode ser impreciso.' },
               ].map((option) => (
                 <label key={option.value} className="flex items-start space-x-3 p-3 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                   <input
                     type="radio"
                     name="sceneSplitMode"
                     value={option.value}
-                    checked={(localConfig.sceneConfig?.splitMode || 'paragraphs') === option.value}
+                    checked={(localConfig.sceneConfig?.splitMode || 'sentences') === option.value}
                     onChange={(e) => updateField('sceneConfig.splitMode', e.target.value as SceneSplitMode)}
                     className="w-4 h-4 mt-1 text-primary-600 focus:ring-primary-500"
                   />
@@ -198,7 +199,30 @@ export function FFmpegConfig() {
               ))}
             </div>
 
-            {(localConfig.sceneConfig?.splitMode || 'paragraphs') === 'paragraphs' && (
+            {(localConfig.sceneConfig?.splitMode || 'sentences') === 'sentences' && (
+              <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Sentenças por cena: {localConfig.sceneConfig?.sentencesPerScene || 2}
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  value={localConfig.sceneConfig?.sentencesPerScene || 2}
+                  onChange={(e) => updateField('sceneConfig.sentencesPerScene', parseInt(e.target.value))}
+                  className="w-full h-2 bg-gray-200 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>Mais cenas (curtas)</span>
+                  <span>Menos cenas (longas)</span>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Ex: 30 sentenças com 2 por cena = 15 cenas
+                </p>
+              </div>
+            )}
+
+            {localConfig.sceneConfig?.splitMode === 'paragraphs' && (
               <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Parágrafos por cena: {localConfig.sceneConfig?.paragraphsPerScene || 3}
@@ -216,7 +240,7 @@ export function FFmpegConfig() {
                   <span>Menos cenas (longas)</span>
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
-                  Ex: 20 parágrafos com 3 por cena = 7 cenas (6 de 3 + 1 de 2)
+                  Ex: 10 parágrafos com 2 por cena = 5 cenas
                 </p>
               </div>
             )}
