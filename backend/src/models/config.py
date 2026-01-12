@@ -54,6 +54,14 @@ class SceneDurationMode(str, Enum):
     RANGE = "range"
 
 
+class EncoderType(str, Enum):
+    """Tipo de encoder de vídeo."""
+    CPU = "cpu"  # libx264 (compatível com tudo)
+    NVIDIA = "nvidia"  # h264_nvenc (requer GPU NVIDIA)
+    AMD = "amd"  # h264_amf (requer GPU AMD)
+    INTEL = "intel"  # h264_qsv (requer Intel Quick Sync)
+
+
 # ============== API CONFIGS ==============
 
 
@@ -188,6 +196,7 @@ class FFmpegConfig(BaseModel):
     fps: int = 30
     crf: int = Field(default=23, ge=18, le=28)
     preset: str = "medium"
+    encoder: EncoderType = EncoderType.CPU  # CPU por padrão (mais compatível)
     scene_config: SceneConfig = SceneConfig()
     scene_duration: SceneDurationConfig = SceneDurationConfig()
     transition: TransitionConfig = TransitionConfig()

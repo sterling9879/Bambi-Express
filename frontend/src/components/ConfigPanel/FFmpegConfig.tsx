@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Save } from 'lucide-react';
 import { useApiConfig } from '@/hooks/useApiConfig';
 import toast from 'react-hot-toast';
-import type { FFmpegConfig as FFmpegConfigType, TransitionType, SceneDurationMode, SceneSplitMode } from '@/lib/types';
+import type { FFmpegConfig as FFmpegConfigType, TransitionType, SceneDurationMode, SceneSplitMode, EncoderType } from '@/lib/types';
 
 const TRANSITION_TYPES: { value: TransitionType; label: string }[] = [
   { value: 'fade', label: 'Fade (dissolve suave)' },
@@ -166,6 +166,39 @@ export function FFmpegConfig() {
                 <span>Maior qualidade</span>
                 <span>Menor arquivo</span>
               </div>
+            </div>
+
+            {/* Encoder Selection */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Processamento de Vídeo
+              </label>
+              <div className="space-y-2">
+                {[
+                  { value: 'cpu', label: 'CPU (libx264)', description: 'Compatível com todos os sistemas. Mais lento.' },
+                  { value: 'nvidia', label: 'GPU NVIDIA (NVENC)', description: 'Muito mais rápido. Requer GPU NVIDIA.' },
+                  { value: 'amd', label: 'GPU AMD (AMF)', description: 'Acelerado por hardware. Requer GPU AMD.' },
+                  { value: 'intel', label: 'Intel Quick Sync', description: 'Acelerado por hardware. Requer Intel com iGPU.' },
+                ].map((option) => (
+                  <label key={option.value} className="flex items-start space-x-3 p-3 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                    <input
+                      type="radio"
+                      name="encoder"
+                      value={option.value}
+                      checked={(localConfig.encoder || 'cpu') === option.value}
+                      onChange={(e) => updateField('encoder', e.target.value as EncoderType)}
+                      className="w-4 h-4 mt-1 text-primary-600 focus:ring-primary-500"
+                    />
+                    <div>
+                      <span className="block text-gray-700 dark:text-gray-300 font-medium">{option.label}</span>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">{option.description}</span>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
+                ⚠️ GPU requer drivers e FFmpeg compilado com suporte ao encoder. Se falhar, use CPU.
+              </p>
             </div>
           </div>
         </section>

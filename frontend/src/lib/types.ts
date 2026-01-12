@@ -116,6 +116,7 @@ export type TransitionType =
 
 export type SceneDurationMode = 'auto' | 'fixed' | 'range';
 export type SceneSplitMode = 'paragraphs' | 'sentences' | 'gemini';
+export type EncoderType = 'cpu' | 'nvidia' | 'amd' | 'intel';
 
 export interface SceneConfig {
   splitMode: SceneSplitMode;
@@ -178,6 +179,7 @@ export interface FFmpegConfig {
   fps: 24 | 30 | 60;
   crf: number;
   preset: 'ultrafast' | 'fast' | 'medium' | 'slow' | 'veryslow';
+  encoder: EncoderType;
   sceneConfig: SceneConfig;
   sceneDuration: SceneDurationConfig;
   transition: TransitionConfig;
