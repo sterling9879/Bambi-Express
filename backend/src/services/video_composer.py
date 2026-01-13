@@ -21,9 +21,50 @@ import os
 import hashlib
 
 from ..models.video import Scene, GeneratedImage, VideoResult
-from ..models.config import FFmpegConfig
+from ..models.config import FFmpegConfig, EncoderType
 
 logger = logging.getLogger(__name__)
+
+
+# Mapeamento de preset CPU para GPU
+PRESET_MAP = {
+    # CPU preset -> NVIDIA preset
+    "nvidia": {
+        "ultrafast": "p1",
+        "superfast": "p2",
+        "veryfast": "p3",
+        "faster": "p4",
+        "fast": "p4",
+        "medium": "p5",
+        "slow": "p6",
+        "slower": "p7",
+        "veryslow": "p7",
+    },
+    # CPU preset -> AMD quality
+    "amd": {
+        "ultrafast": "speed",
+        "superfast": "speed",
+        "veryfast": "speed",
+        "faster": "balanced",
+        "fast": "balanced",
+        "medium": "balanced",
+        "slow": "quality",
+        "slower": "quality",
+        "veryslow": "quality",
+    },
+    # CPU preset -> Intel preset
+    "intel": {
+        "ultrafast": "veryfast",
+        "superfast": "veryfast",
+        "veryfast": "veryfast",
+        "faster": "faster",
+        "fast": "fast",
+        "medium": "medium",
+        "slow": "slow",
+        "slower": "slower",
+        "veryslow": "veryslow",
+    }
+}
 
 # Cores de fallback baseadas no mood
 MOOD_COLORS = {
@@ -69,6 +110,82 @@ class VideoComposer:
         self.output_dir = Path(output_dir).resolve()  # Sempre usar caminho absoluto
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._temp_files: List[Path] = []  # Track temp files for cleanup
+
+    def _get_encoder_args(self, for_copy: bool = False) -> List[str]:
+        """
+        Retorna argumentos de encoder baseado na configuração.
+
+        Args:
+            for_copy: Se True, retorna apenas -c:v copy (para muxing sem re-encode)
+
+        Returns:
+            Lista de argumentos para o ffmpeg
+        """
+        if for_copy:
+            return ["-c:v", "copy"]
+
+        cfg = self.config
+        encoder = getattr(cfg, 'encoder', EncoderType.CPU)
+
+        # Se for enum, pegar o valor
+        if hasattr(encoder, 'value'):
+            encoder = encoder.value
+
+        if encoder == "nvidia":
+            # NVIDIA NVENC - muito mais rápido que CPU
+            preset = PRESET_MAP["nvidia"].get(cfg.preset, "p5")
+            return [
+                "-c:v", "h264_nvenc",
+                "-preset", preset,
+                "-cq", str(cfg.crf),  # NVENC usa -cq ao invés de -crf
+                "-rc", "vbr",  # Variable bitrate mode
+            ]
+
+        elif encoder == "amd":
+            # AMD AMF
+            quality = PRESET_MAP["amd"].get(cfg.preset, "balanced")
+            return [
+                "-c:v", "h264_amf",
+                "-quality", quality,
+                "-rc", "vbr_latency",
+                "-qp_i", str(cfg.crf),
+                "-qp_p", str(cfg.crf),
+            ]
+
+        elif encoder == "intel":
+            # Intel Quick Sync
+            preset = PRESET_MAP["intel"].get(cfg.preset, "medium")
+            return [
+                "-c:v", "h264_qsv",
+                "-preset", preset,
+                "-global_quality", str(cfg.crf),
+            ]
+
+        else:
+            # CPU (libx264) - padrão, mais compatível
+            return [
+                "-c:v", "libx264",
+                "-preset", cfg.preset,
+                "-crf", str(cfg.crf),
+            ]
+
+    def _get_hwaccel_args(self) -> List[str]:
+        """
+        Retorna argumentos de aceleração de hardware para decodificação.
+        """
+        cfg = self.config
+        encoder = getattr(cfg, 'encoder', EncoderType.CPU)
+
+        if hasattr(encoder, 'value'):
+            encoder = encoder.value
+
+        if encoder == "nvidia":
+            # CUDA para decodificação acelerada (opcional, pode falhar)
+            return ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
+        elif encoder == "intel":
+            return ["-hwaccel", "qsv"]
+        # AMD e CPU não precisam de hwaccel específico
+        return []
 
     def compose(
         self,
@@ -381,9 +498,7 @@ class VideoComposer:
             *inputs,
             "-filter_complex", filter_complex,
             "-map", final_video,
-            "-c:v", "libx264",
-            "-preset", cfg.preset,
-            "-crf", str(cfg.crf),
+            *self._get_encoder_args(),
             "-r", str(cfg.fps),
             "-pix_fmt", "yuv420p",
             "-max_muxing_queue_size", "1024",
@@ -446,9 +561,7 @@ class VideoComposer:
             *inputs,
             "-filter_complex", filter_complex,
             "-map", current,
-            "-c:v", "libx264",
-            "-preset", self.config.preset,
-            "-crf", str(self.config.crf),
+            *self._get_encoder_args(),
             "-pix_fmt", "yuv420p",
             str(output_path.resolve())
         ]
@@ -564,9 +677,7 @@ class VideoComposer:
                 "-filter_complex", f"[0:v]tpad=stop_mode=clone:stop_duration={audio_duration - video_duration + 0.5}[v]",
                 "-map", "[v]",
                 "-map", "1:a:0",
-                "-c:v", "libx264",
-                "-preset", "fast",
-                "-crf", "23",
+                *self._get_encoder_args(),
                 "-c:a", "aac" if cfg.audio.codec == "aac" else "libmp3lame",
                 "-b:a", f"{cfg.audio.bitrate}k",
                 "-t", str(audio_duration),
@@ -899,9 +1010,7 @@ class VideoComposer:
             "-filter_complex", filter_complex,
             "-map", final_video,
             "-map", audio_output,
-            "-c:v", "libx264",
-            "-preset", cfg.preset,
-            "-crf", str(cfg.crf),
+            *self._get_encoder_args(),
             "-c:a", "aac" if cfg.audio.codec == "aac" else "libmp3lame",
             "-b:a", f"{cfg.audio.bitrate}k",
             "-r", str(cfg.fps),
