@@ -196,29 +196,154 @@ Chegou a hora de usar! 🎬
 
 ---
 
-## Parte 8 — Configurar as chaves de API (importante!)
+## Parte 8 — Configurar as APIs (guia completo)
 
-O Bambi Express usa serviços de IA de outras empresas para criar voz, imagem e transcrição. Para isso, você precisa das **"chaves de API"** — pense nelas como **senhas** que liberam esses serviços.
+Esta é a parte que **mais dá dúvida**, então vamos com muita calma. Ao final, seu Bambi Express estará 100% pronto para gerar vídeos. 💪
 
-Você vai precisar criar uma conta e pegar a chave em cada um destes sites:
+### 8.1 — O que é uma "chave de API"? (entenda antes)
 
-| Serviço | Para que serve | Obrigatório? |
-|---------|----------------|--------------|
-| **ElevenLabs** | Cria a narração (voz) | ✅ Sim |
-| **AssemblyAI** | Sincroniza a legenda com a voz | ✅ Sim |
-| **Google Gemini** | Divide o texto em cenas | ✅ Sim |
-| **WaveSpeed** | Gera as imagens | ✅ Sim |
-| **Suno** | Cria músicas de fundo | ❌ Opcional |
+O Bambi Express, sozinho, **não sabe** criar voz, imagem ou música. Ele **pede ajuda** para empresas especializadas em IA pela internet. Cada uma dessas empresas exige uma **"chave de API"** para saber que é você usando o serviço.
 
-**Como colocar as chaves no programa:**
+> 🔑 Pense na chave de API como uma **senha secreta e única** que a empresa te dá. Quando o Bambi Express mostra essa senha, a empresa responde: *"Ah, é você! Pode usar."*
 
-1. Com o Bambi Express aberto no navegador (http://localhost:3000), procure a seção de **"Configurações"** (Config / Settings).
-2. Cole cada chave no campo correspondente.
-3. Salve.
+**Regras de ouro sobre as chaves:**
 
-Pronto! Agora é só escrever seu texto e mandar gerar o vídeo. 🚀
+- ⚠️ **Nunca compartilhe** suas chaves com ninguém, nem poste em prints/vídeos. Quem tiver sua chave pode gastar seus créditos.
+- Uma chave costuma ser um texto grande e embaralhado, tipo: `sk_a1b2c3d4e5f6...`
+- Sempre **copie e cole** a chave (nunca digite à mão) para não errar nenhuma letra.
 
-> 💡 Cada um desses serviços pode ter **custos** ou **limites gratuitos**. Confira os planos no site de cada um antes de usar bastante.
+### 8.2 — Quais APIs você precisa
+
+| Serviço | Para que serve | Obrigatório? | Custo típico |
+|---------|----------------|--------------|--------------|
+| **ElevenLabs** ou **Minimax** | Cria a narração (a voz) | ✅ Sim (uma das duas) | Tem plano grátis limitado / pago |
+| **AssemblyAI** | Sincroniza a legenda com a fala (timestamps) | ✅ Sim | Tem cota grátis |
+| **Google Gemini** | Lê o texto e divide em cenas | ✅ Sim | Grátis (com limites) |
+| **WaveSpeed** | Gera as imagens das cenas | ✅ Sim | Pago (por crédito/$) |
+| **Suno** | Cria música de fundo com IA | ❌ Opcional | Pago |
+
+> 💡 **Sobre a voz:** você pode escolher entre **ElevenLabs** (vozes muito naturais) **OU** **Minimax** (que usa a mesma chave do WaveSpeed e tem controle de emoção). Você **não precisa das duas** — escolha uma. Se estiver na dúvida, comece com a **ElevenLabs**.
+
+### 8.3 — Abrindo a tela de configuração
+
+1. Com o Bambi Express aberto no navegador (**http://localhost:3000**), procure e clique em **"Configurações"** (pode aparecer como *Config* ou um ícone de engrenagem ⚙️).
+2. Clique na aba **"Configuração de APIs"**.
+3. Você verá vários blocos: *Provedor de Áudio*, *ElevenLabs*, *Minimax*, *AssemblyAI*, *Google Gemini* e *WaveSpeed*.
+
+> 👁️ Ao lado de cada campo de chave há um **ícone de olho**. Clique nele para **mostrar ou esconder** o que você digitou — útil para conferir se colou certo.
+
+Agora vamos pegar cada chave, uma de cada vez. Deixe a aba de configuração aberta e vá abrindo os sites em outra aba do navegador.
+
+---
+
+### 8.4 — Google Gemini (comece por aqui, é grátis) 🟢
+
+Serve para o programa **entender seu texto e dividir em cenas**.
+
+1. Acesse: **https://aistudio.google.com/apikey**
+2. Faça login com sua **conta Google** (a mesma do Gmail).
+3. Clique no botão **"Create API key" / "Criar chave de API"**.
+4. Pode aparecer para escolher um projeto — se aparecer, escolha qualquer um ou crie um novo, e confirme.
+5. Vai aparecer sua chave. Clique no botão de **copiar** 📋.
+6. Volte ao Bambi Express → bloco **"Google Gemini"** → cole no campo **"API Key"**.
+7. No campo **"Modelo"**, deixe **"Gemini 2.0 Flash"** (é o recomendado).
+8. Clique em **"Testar conexão"** logo abaixo. Se aparecer **"Conectado"** em verde, deu certo! ✅
+
+---
+
+### 8.5 — AssemblyAI (grátis para começar) 🟢
+
+Serve para **sincronizar a legenda com a fala** (saber a hora exata de cada palavra).
+
+1. Acesse: **https://www.assemblyai.com/** e clique em **"Sign up" / Criar conta**.
+2. Confirme seu e-mail, se pedir.
+3. Ao entrar no painel (*Dashboard*), sua **API Key** aparece logo na tela inicial, num campo escrito **"Your API Key"**. Clique para **copiar**.
+4. Volte ao Bambi Express → bloco **"AssemblyAI (Transcrição)"** → cole no campo **"API Key"**.
+5. No campo **"Idioma"**, escolha o idioma do seu texto (ex.: **Português (BR)**). Se o texto puder ser em vários idiomas, escolha **"Auto-detectar"**.
+6. Clique em **"Testar conexão"**. Espere o **"Conectado"** verde. ✅
+
+---
+
+### 8.6 — WaveSpeed (gera as imagens — precisa de créditos) 💳
+
+Serve para **criar as imagens** de cada cena. É um serviço **pago** (você coloca créditos e vai gastando).
+
+1. Acesse: **https://wavespeed.ai/** e crie sua conta (**Sign up**).
+2. Procure no painel a seção de **"API Keys"** (Chaves de API), geralmente dentro de *Settings* / *Account* / *Dashboard*.
+3. Clique em **"Create / Generate API Key"**, dê um nome qualquer (ex.: `bambi`) e **copie** a chave gerada.
+4. Volte ao Bambi Express → bloco **"WaveSpeed Flux"** → cole no campo **"API Key"**.
+5. Configurações recomendadas neste bloco:
+   - **Modelo:** *Flux Dev Ultra Fast* (bom equilíbrio entre velocidade e qualidade).
+   - **Resolução:** *1920x1080* para vídeo normal (deitado), ou *1080x1920* para vídeo vertical (Reels/TikTok/Shorts).
+   - **Formato:** *PNG* (mais qualidade) ou *JPEG* (arquivo menor).
+   - **Estilo Visual:** pode deixar o texto que já vem preenchido, ou trocar por um estilo seu (ex.: `cinematic, dramatic lighting, 8k`).
+6. Clique em **"Testar conexão"** e espere o **"Conectado"** verde. ✅
+
+> 💰 Para gerar imagens de verdade, você precisa **adicionar créditos** (dinheiro) na sua conta WaveSpeed. Quando conectado, o Bambi Express mostra o **saldo em $** no topo desse bloco.
+
+---
+
+### 8.7 — A voz: escolha ElevenLabs OU Minimax 🎙️
+
+No topo da tela há o bloco **"Provedor de Áudio"** com dois botões: **ElevenLabs** e **Minimax**. Clique no que você vai usar. **Escolha só um.**
+
+#### Opção A — ElevenLabs (recomendada para iniciantes)
+
+1. Acesse: **https://elevenlabs.io/** e crie uma conta (**Sign up**).
+2. Depois de logado, clique na sua **foto/inicial** no canto e vá em **"Profile"** ou **"API Keys"**.
+   - O caminho costuma ser: ícone do perfil → **"API Keys"** → **"Create API Key"**.
+3. **Copie** a chave gerada.
+4. Volte ao Bambi Express → bloco **"ElevenLabs"** → cole no campo **"API Key"**.
+5. Clique em **"Testar conexão"**. Quando conectar, a listinha **"Voice ID"** vai **carregar as vozes disponíveis**.
+6. Abra o **"Voice ID"** e **escolha uma voz** da lista (experimente algumas depois para ver qual gosta mais). ✅
+
+#### Opção B — Minimax (usa a mesma chave do WaveSpeed)
+
+> Só faça isto se você **não** for usar a ElevenLabs.
+
+1. No bloco **"Provedor de Áudio"**, clique em **"Minimax"** (vai aparecer a etiqueta **"Ativo"**).
+2. **Não precisa de chave nova!** O Minimax usa a **mesma API Key do WaveSpeed** que você já colocou na Parte 8.6.
+3. No bloco **"Minimax Audio"**, ajuste:
+   - **Voz:** escolha uma da lista.
+   - **Emoção:** *neutral* costuma ser a mais segura para começar.
+   - **Velocidade / Pitch / Volume:** pode deixar no padrão.
+4. Clique em **"Testar conexão"** e espere o **"Conectado"** verde. ✅
+
+---
+
+### 8.8 — Suno (música por IA — opcional, pode pular) 🎵
+
+Isto é **totalmente opcional**. O programa já pode usar músicas da biblioteca interna sem precisar do Suno. Só configure se quiser que a **música de fundo seja criada por IA**.
+
+- A chave do Suno **não fica** na aba "Configuração de APIs". Ela é usada na aba de **Música**: escolha o modo **"Gerar com IA (Suno)"** e informe a chave lá.
+- Como o Suno **não tem uma API oficial pública fácil**, isso é considerado um recurso **avançado**. Se você é iniciante, **pule esta etapa** por enquanto.
+
+---
+
+### 8.9 — Salvar e testar tudo (passo final!) 💾
+
+**Muito importante:** de nada adianta preencher as chaves e não salvar!
+
+1. Role a tela até o final da aba de configuração.
+2. Clique no botão **"Testar Todas"** — o programa vai checar todas as APIs de uma vez. O ideal é que todas as obrigatórias mostrem **"Conectado"** em verde.
+3. Clique no botão azul **"Salvar"**. Vai aparecer a mensagem **"Configurações salvas!"**.
+
+✅ **Pronto! Agora é só escrever seu texto e mandar gerar o vídeo.** 🚀
+
+---
+
+### 8.10 — Resumo das APIs (cola rápida)
+
+| Serviço | Onde pegar a chave | Onde colar no Bambi |
+|---------|--------------------|---------------------|
+| **Google Gemini** | https://aistudio.google.com/apikey | Bloco "Google Gemini" → API Key |
+| **AssemblyAI** | https://www.assemblyai.com/ (Dashboard) | Bloco "AssemblyAI" → API Key |
+| **WaveSpeed** | https://wavespeed.ai/ (API Keys) | Bloco "WaveSpeed Flux" → API Key |
+| **ElevenLabs** | https://elevenlabs.io/ (Profile → API Keys) | Bloco "ElevenLabs" → API Key |
+| **Minimax** | (usa a chave do WaveSpeed) | Só escolher a voz no bloco "Minimax" |
+| **Suno** (opcional) | Recurso avançado | Aba "Música" → modo "Gerar com IA" |
+
+> 💡 **Dica de custo:** Gemini e AssemblyAI têm uso gratuito para começar. **WaveSpeed é pago** (você precisa de créditos para gerar imagens) e a **ElevenLabs** tem um plano grátis limitado. Confira os planos no site de cada um antes de usar bastante.
 
 ---
 
@@ -247,7 +372,16 @@ Quando sair uma versão nova, você **não precisa reinstalar tudo**. Basta:
 → Provavelmente o **FFmpeg** não foi instalado corretamente (Parte 4). Abra o PowerShell e teste com `ffmpeg -version`. Se não funcionar, refaça a Parte 4.
 
 **❌ Dá erro dizendo que faltou uma chave de API**
-→ Você precisa preencher as chaves na Parte 8. Confira se colou todas as chaves **obrigatórias** e se não sobrou espaço em branco.
+→ Você precisa preencher as chaves na Parte 8. Confira se colou todas as chaves **obrigatórias** e se não sobrou espaço em branco. **Não esqueça de clicar em "Salvar"!**
+
+**❌ A conexão da API deu "Falha" (vermelho) no botão "Testar conexão"**
+→ Quase sempre é a chave colada errada. Clique no **ícone de olho** 👁️ para ver o que foi digitado e confira se não faltou um pedaço ou sobrou espaço no começo/fim. Gere a chave de novo no site se precisar. Confira também se você está com **internet** funcionando.
+
+**❌ As imagens não são geradas / erro de "créditos" no WaveSpeed**
+→ O WaveSpeed é **pago**. Você precisa **adicionar créditos** na sua conta no site do WaveSpeed. Quando conectado, o saldo em **$** aparece no topo do bloco WaveSpeed.
+
+**❌ A voz não é gerada**
+→ Confira se você escolheu um **"Provedor de Áudio"** (ElevenLabs ou Minimax) no topo. Se usa ElevenLabs, confirme que também selecionou uma voz na lista **"Voice ID"**. Se usa Minimax, lembre que ele depende da chave do **WaveSpeed** estar preenchida.
 
 **❌ "git não é reconhecido como comando"**
 → O Git não foi instalado ou você não reabriu a janela. Feche todas as janelas de terminal, abra uma nova e tente de novo. Se persistir, refaça a Parte 1.
@@ -265,7 +399,7 @@ Para quem já leu tudo e só quer lembrar a ordem:
 5. Baixar o projeto → `git clone https://github.com/sterling9879/bambi-express.git`
 6. Rodar **`install.bat`** (dois cliques)
 7. Rodar **`start.bat`** (dois cliques) → abre em http://localhost:3000
-8. Colocar as **chaves de API** nas Configurações
+8. Colocar as **chaves de API** em Configurações → "Configuração de APIs" (Gemini, AssemblyAI, WaveSpeed e a voz ElevenLabs/Minimax), **testar** e clicar em **"Salvar"**
 
 ---
 
